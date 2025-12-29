@@ -79,6 +79,7 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, clientData, invoices,
   const handlePrintPayslip = (item: any) => {
     const month = new Date(item.runId.split('-')[1] + "-01").toLocaleString('default', { month: 'long' });
     const originalTitle = document.title;
+    // Format: Payslip_EmployeeID_Month
     document.title = `Payslip_${item.employeeId}_${month}`;
     setViewingPayslip(item);
     setIsPrinting(true);
@@ -281,7 +282,6 @@ const ClientPortal: React.FC<ClientPortalProps> = ({ user, clientData, invoices,
                      </div>
                   </div>
                )}
-               {/* ... payslips same ... */}
                {activeTab === 'payslips' && (
                   <div className="grid gap-6 animate-in fade-in">
                      <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Released Vouchers</h3>

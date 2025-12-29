@@ -143,6 +143,11 @@ export interface Employee {
   professionalTax: number;
   tds: number;
   netSalary: number;
+  
+  // Advanced Payroll Stats
+  outstandingAdvance: number;
+  fixedBonus: number;
+  overtimeRatePerHour: number;
 
   // Section 8: Attendance & Leave
   attendanceMethod: 'Biometric' | 'App' | 'Manual';
@@ -153,8 +158,9 @@ export interface Employee {
   // Section 9: System
   loginCreation: 'Yes' | 'No';
   role: UserRole;
-  status: 'Active' | 'Inactive' | 'Resigned';
+  status: 'Active' | 'Inactive' | 'Resigned' | 'Terminated' | 'Retired';
   lastWorkingDay?: string;
+  settlementStatus?: 'Pending' | 'Processed';
   portalPassword?: string;
 }
 
@@ -175,6 +181,8 @@ export interface PayrollItem {
   payableDays: number;
   standardDays: number;
   lopDays: number;
+  isFinalSettlement?: boolean;
+  paymentMethod: string;
   earnings: {
     basic: number;
     hra: number;
@@ -195,6 +203,7 @@ export interface PayrollItem {
   totalDeductions: number;
   netSalary: number;
   qrCode: string;
+  overtimeHours?: number;
 }
 
 export interface PayrollRun {
