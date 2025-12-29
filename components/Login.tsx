@@ -1,0 +1,152 @@
+
+import React, { useState } from 'react';
+import { Lock, User, ShieldCheck, ArrowRight, Loader2 } from 'lucide-react';
+import { COMPANY_LOGO } from '../constants';
+import { auth, db } from '../firebase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { UserRole } from '../types';
+
+interface LoginProps {
+  onLogin: (user: any) => void;
+}
+
+const Login: React.FC<LoginProps> = ({ onLogin }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    
+    try {
+        // STRATEGY 1: Check if it's a numeric code (Employee or Client)
+        if (!email.includes('@')) {
+           // A: Check Employees First (Code 911XXX)
+           const employeesRef = collection(db, 'employees');
+           const empQ = query(employeesRef, where('id', '==', email), where('portalPassword', '==', password));
+           const empSnapshot = await getDocs(empQ);
+
+           if (!empSnapshot.empty) {
+               const empData = empSnapshot.docs[0].data();
+               const syntheticUser = {
+                   uid: empData.id,
+                   email: empData.email || `${empData.id}@vedartha.internal`,
+                   displayName: empData.fullName,
+                   role: UserRole.EMPLOYEE,
+                   clientId: empData.id, // Reusing field for mapping
+                   isEmployee: true
+               };
+               onLogin(syntheticUser);
+               return;
+           }
+
+           // B: Check Client Portal Login
+           const clientsRef = collection(db, 'clients');
+           const q = query(clientsRef, where('id', '==', email), where('portalPassword', '==', password));
+           const querySnapshot = await getDocs(q);
+
+           if (!querySnapshot.empty) {
+              const clientData = querySnapshot.docs[0].data();
+              if (clientData.portalAccess) {
+                 const syntheticUser = {
+                    uid: clientData.id,
+                    email: clientData.email,
+                    displayName: clientData.name,
+                    role: UserRole.CLIENT,
+                    clientId: clientData.id,
+                    isClient: true
+                 };
+                 onLogin(syntheticUser);
+                 return;
+              } else {
+                 throw new Error('Portal access disabled.');
+              }
+           }
+           throw new Error('Invalid Login ID or Password.');
+        }
+
+        // STRATEGY 2: Check Custom Staff Users
+        const usersRef = collection(db, 'users');
+        const userQ = query(usersRef, where('email', '==', email), where('password', '==', password));
+        const userSnapshot = await getDocs(userQ);
+
+        if (!userSnapshot.empty) {
+            const userData = userSnapshot.docs[0].data();
+            const syntheticStaff = {
+                uid: userSnapshot.docs[0].id,
+                email: userData.email,
+                displayName: userData.displayName,
+                role: userData.role,
+                allowedBranchIds: userData.allowedBranchIds || [],
+                isStaff: true
+            };
+            onLogin(syntheticStaff);
+            return;
+        }
+
+        // STRATEGY 3: Fallback to Firebase Auth
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        onLogin(userCredential.user);
+
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Authentication failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#f4f7fa] relative overflow-hidden font-sans">
+      <div className="absolute top-0 left-0 w-full h-1 bg-[#0854a0]"></div>
+      <div className="absolute top-0 right-0 w-1/2 h-screen bg-blue-50/50 -skew-x-12 transform translate-x-1/3 z-0"></div>
+      
+      <div className="w-full max-w-[480px] z-10 p-4">
+        <div className="bg-white rounded-[32px] shadow-[0_32px_128px_-16px_rgba(0,0,0,0.08)] border border-gray-100 overflow-hidden transition-all duration-500">
+          <div className="p-10 pb-6 text-center">
+            <div className="flex justify-center mb-8">
+              <img src={COMPANY_LOGO} alt="VEDARTHA" className="h-16 object-contain" />
+            </div>
+            <h2 className="text-xl font-black text-gray-800 tracking-tight uppercase mb-1">Vedartha International Limited</h2>
+          </div>
+
+          <form onSubmit={handleSubmit} className="p-10 pt-4 space-y-6">
+            {error && (
+              <div className="bg-rose-50 border border-rose-100 text-rose-600 p-4 rounded-xl text-xs font-bold flex items-center">
+                <ShieldCheck size={16} className="mr-3 shrink-0" /> {error}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <div className="relative">
+                <User className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full h-14 bg-gray-50 border-2 border-transparent focus:border-[#0854a0] rounded-2xl pl-14 pr-6 text-sm font-bold outline-none" placeholder="Employee ID (e.g. 911001)" required />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="relative">
+                <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full h-14 bg-gray-50 border-2 border-transparent focus:border-[#0854a0] rounded-2xl pl-14 pr-6 text-sm font-bold outline-none" placeholder="Password" required />
+              </div>
+            </div>
+
+            <button type="submit" disabled={loading} className="w-full h-16 bg-[#0854a0] text-white rounded-2xl text-sm font-black uppercase tracking-widest shadow-2xl hover:bg-[#064280] transition-all flex items-center justify-center group disabled:opacity-70">
+              {loading ? <Loader2 size={24} className="animate-spin" /> : <>Secure Access <ArrowRight size={18} className="ml-3 group-hover:translate-x-1" /></>}
+            </button>
+          </form>
+
+          <div className="p-8 bg-gray-50/50 border-t border-gray-100 text-center text-[9px] font-bold text-gray-400 uppercase tracking-widest">
+            Secured by Vedartha Systems & Solutions
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Login;
