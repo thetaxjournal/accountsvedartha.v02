@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom';
 import { 
   FileText, LogOut, Download, Clock, ShieldCheck, 
   LayoutDashboard, Calendar, UserCircle, HardHat, Award,
-  ShieldAlert, Landmark, Wallet, Camera, Key, Printer
+  ShieldAlert, Landmark, Wallet, Camera, Key, Printer,
+  MapPin, Phone, Mail, Building2, User, CreditCard, Briefcase, FileSearch
 } from 'lucide-react';
 import QRCode from 'react-qr-code';
 import { PayrollItem, Employee, Branch } from '../types';
@@ -45,7 +46,7 @@ interface EmployeePortalProps {
 }
 
 const EmployeePortal: React.FC<EmployeePortalProps> = ({ user, branches, payrollItems, onLogout }) => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'payslips' | 'security'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'profile' | 'payslips' | 'security'>('dashboard');
   const [viewingItem, setViewingItem] = useState<PayrollItem | null>(null);
   const [isPrinting, setIsPrinting] = useState(false);
   const [myEmpData, setMyEmpData] = useState<Employee | null>(null);
@@ -84,9 +85,7 @@ const EmployeePortal: React.FC<EmployeePortalProps> = ({ user, branches, payroll
     }, 400);
   };
 
-  /** 
-   * BLACK-AND-WHITE SAP/PWC MIRROR DOCUMENT
-   */
+  /** SAP/PWC Mirror Layout for Printing */
   const BW_PayslipDocument = ({ item }: { item: PayrollItem }) => {
     const branch = branches.find(b => b.id === myEmpData?.branchId) || branches[0];
     const monthYear = new Date(item.runId.split('-')[1] + "-01");
@@ -96,181 +95,73 @@ const EmployeePortal: React.FC<EmployeePortalProps> = ({ user, branches, payroll
       <div className="bg-white w-[210mm] min-h-[297mm] p-12 text-black font-sans flex flex-col border border-black relative print:border-none print:p-8">
         <div className="flex justify-between items-start border-b border-black pb-4 mb-4">
           <img src={LOGO_DARK_BG} alt="Logo" className="h-16 grayscale brightness-0 object-contain" />
-          <div className="text-right flex-1 ml-10 text-black">
+          <div className="text-right flex-1 ml-10">
             <h1 className="text-xl font-bold uppercase tracking-tight leading-tight">{COMPANY_NAME.toUpperCase()}</h1>
             <p className="text-sm font-bold uppercase tracking-widest">Service Delivery Center</p>
-            <p className="text-xs font-medium uppercase opacity-80">(Private Limited)</p>
+            <p className="text-[10px] font-medium uppercase opacity-60">(Private Limited)</p>
           </div>
         </div>
-
         <div className="text-center mb-6">
            <h2 className="text-md font-bold text-black border-b border-black inline-block px-4 pb-0.5">
              Payslip for the month of {monthStr} {monthYear.getFullYear()}
            </h2>
         </div>
-
-        <div className="grid grid-cols-2 gap-x-0 border border-black mb-6 text-black">
+        <div className="grid grid-cols-2 gap-x-0 border border-black mb-6">
            <div className="border-r border-black">
               {[
                 { l: 'Employee ID', v: item.employeeId },
-                { l: 'Date of Birth', v: myEmpData?.dob ? new Date(myEmpData.dob).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'}).toUpperCase() : '' },
-                { l: 'Designation', v: myEmpData?.designation?.toUpperCase() || '' },
-                { l: 'UAN Number', v: myEmpData?.uan || '' },
-                { l: 'PF Number', v: myEmpData?.pfAccountNumber || '' },
-                { l: 'Regime Type', v: `${myEmpData?.taxRegime} Regime` }
+                { l: 'Date of Birth', v: myEmpData?.dob },
+                { l: 'Designation', v: myEmpData?.designation?.toUpperCase() },
+                { l: 'UAN Number', v: myEmpData?.uan },
+                { l: 'PF Number', v: myEmpData?.pfAccountNumber }
               ].map((row, i) => (
-                <div key={i} className={`flex px-3 py-1 text-[10px] ${i < 5 ? 'border-b border-black' : ''}`}>
-                   <span className="w-[120px] font-bold">{row.l}</span>
-                   <span className="flex-1">: {row.v}</span>
+                <div key={i} className={`flex px-3 py-1 text-[10px] ${i < 4 ? 'border-b border-black' : ''}`}>
+                   <span className="w-[120px] font-bold">{row.l}</span><span>: {row.v}</span>
                 </div>
               ))}
            </div>
            <div>
               {[
                 { l: 'Employee Name', v: item.employeeName?.toUpperCase() },
-                { l: 'Joining Date', v: myEmpData?.dateOfJoining ? new Date(myEmpData.dateOfJoining).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'}).toUpperCase() : '' },
+                { l: 'Joining Date', v: myEmpData?.dateOfJoining },
                 { l: 'Location', v: branch.address.city?.toUpperCase() },
-                { l: 'Pan Number', v: myEmpData?.pan?.toUpperCase() || '' },
-                { l: 'LOS', v: item.lopDays },
-                { l: 'Status', v: myEmpData?.status?.toUpperCase() || 'ACTIVE' }
+                { l: 'PAN Number', v: myEmpData?.pan?.toUpperCase() },
+                { l: 'LOS', v: item.lopDays }
               ].map((row, i) => (
-                <div key={i} className={`flex px-3 py-1 text-[10px] ${i < 5 ? 'border-b border-black' : ''}`}>
-                   <span className="w-[120px] font-bold">{row.l}</span>
-                   <span className="flex-1">: {row.v}</span>
+                <div key={i} className={`flex px-3 py-1 text-[10px] ${i < 4 ? 'border-b border-black' : ''}`}>
+                   <span className="w-[120px] font-bold">{row.l}</span><span>: {row.v}</span>
                 </div>
               ))}
            </div>
         </div>
-
-        <div className="flex border border-black flex-1 max-h-[340px] text-black">
+        <div className="flex border border-black flex-1 max-h-[340px]">
            <div className="w-1/2 border-r border-black flex flex-col">
-              <div className="bg-gray-100 p-2 font-bold border-b border-black text-[11px] flex justify-between uppercase">
-                 <span>EARNINGS</span><span>Amount (Rs.)</span>
-              </div>
+              <div className="bg-gray-100 p-2 font-bold border-b border-black text-[11px] flex justify-between uppercase"><span>EARNINGS</span><span>Amount (Rs.)</span></div>
               <div className="flex-1 p-3 space-y-1 text-[10px]">
-                 <div className="flex justify-between"><span>Basic Salary</span><span>{item.earnings.basic.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
-                 <div className="flex justify-between"><span>House Rent Allowance</span><span>{item.earnings.hra.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
-                 {item.earnings.bonus > 0 && <div className="flex justify-between"><span>Statutory Bonus</span><span>{item.earnings.bonus.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>}
-                 <div className="flex justify-between"><span>OOC Allowance</span><span>{item.earnings.special.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
-                 <div className="flex justify-between"><span>Special Pay</span><span>{item.earnings.others.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
+                 <div className="flex justify-between"><span>Basic Salary</span><span>{item.earnings.basic.toLocaleString()}</span></div>
+                 <div className="flex justify-between"><span>House Rent Allowance</span><span>{item.earnings.hra.toLocaleString()}</span></div>
+                 <div className="flex justify-between"><span>Special Pay</span><span>{item.earnings.special.toLocaleString()}</span></div>
               </div>
-              <div className="bg-gray-100 p-2 font-bold border-t border-black text-[11px] flex justify-between uppercase">
-                 <span>Total Earnings Rs.</span><span>{(item.grossEarnings - (item.earnings.overtime || 0)).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-              </div>
+              <div className="bg-gray-100 p-2 font-bold border-t border-black text-[11px] flex justify-between uppercase"><span>Total Earnings Rs.</span><span>{item.grossEarnings.toLocaleString()}</span></div>
            </div>
            <div className="w-1/2 flex flex-col">
-              <div className="bg-gray-100 p-2 font-bold border-b border-black text-[11px] flex justify-between uppercase">
-                 <span>DEDUCTIONS</span><span>Amount (Rs.)</span>
-              </div>
+              <div className="bg-gray-100 p-2 font-bold border-b border-black text-[11px] flex justify-between uppercase"><span>DEDUCTIONS</span><span>Amount (Rs.)</span></div>
               <div className="flex-1 p-3 space-y-1 text-[10px]">
-                 <div className="flex justify-between"><span>Provident Fund</span><span>{item.deductions.pf.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
-                 <div className="flex justify-between"><span>Professional Tax</span><span>{item.deductions.pt.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
-                 {item.deductions.esi > 0 && <div className="flex justify-between"><span>ESI Deduction</span><span>{item.deductions.esi.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>}
-                 {item.deductions.advance > 0 && <div className="flex justify-between font-bold"><span>Advance Recovery</span><span>{item.deductions.advance.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>}
+                 <div className="flex justify-between"><span>Provident Fund</span><span>{item.deductions.pf.toLocaleString()}</span></div>
+                 <div className="flex justify-between"><span>Professional Tax</span><span>{item.deductions.pt.toLocaleString()}</span></div>
+                 {item.deductions.esi > 0 && <div className="flex justify-between"><span>ESI Deduction</span><span>{item.deductions.esi.toLocaleString()}</span></div>}
               </div>
-              <div className="bg-gray-100 p-2 font-bold border-t border-black text-[11px] flex justify-between uppercase">
-                 <span>Total Deductions Rs.</span><span>{item.totalDeductions.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-              </div>
+              <div className="bg-gray-100 p-2 font-bold border-t border-black text-[11px] flex justify-between uppercase"><span>Total Deductions Rs.</span><span>{item.totalDeductions.toLocaleString()}</span></div>
            </div>
         </div>
-
-        <div className="border-x border-b border-black flex text-black">
-           <div className="w-2/3 p-4 flex items-center space-x-6">
-              <QRCode value={item.qrCode} size={70} fgColor="#000000" />
-              <div className="flex-1">
-                 <div className="text-lg font-black border border-black px-4 py-2 inline-block">
-                    Net Salary Rs. {(item.netSalary - (item.earnings.overtime || 0)).toLocaleString('en-IN', {minimumFractionDigits: 2})}
-                 </div>
-                 <p className="text-[9px] font-bold italic mt-2 opacity-70">Disbursed In Words: {numberToWords(item.netSalary - (item.earnings.overtime || 0))}</p>
-              </div>
-           </div>
-           <div className="w-1/3 border-l border-black text-[10px]">
-              {[
-                { l: 'STANDARD DAYS', v: item.standardDays },
-                { l: 'DAYS WORKED', v: item.payableDays },
-                { l: 'PAYMENT', v: (item.paymentMethod || myEmpData?.bankDetails.paymentMode)?.toUpperCase() },
-                { l: 'BANK', v: myEmpData?.bankDetails.bankName.toUpperCase() },
-                { l: 'A/C No.', v: myEmpData?.bankDetails.accountNumber }
-              ].map((row, i) => (
-                <div key={i} className={`flex px-3 py-1.5 ${i < 4 ? 'border-b border-black' : ''}`}>
-                   <span className="w-[100px] font-bold uppercase">{row.l}</span>
-                   <span className="flex-1">: {row.v}</span>
-                </div>
-              ))}
-           </div>
-        </div>
-
-        <div className="mt-6 border border-black p-4 text-[9px] font-medium leading-relaxed bg-gray-50 text-black">
-           <p className="font-bold border-b border-black/20 pb-1 mb-2">Note: This is a system generated report. This does not require any signature.</p>
-           <p className="opacity-80">Private and Confidential Disclaimer: This payslip has been generated by the Vedartha International Limited payroll service provider. All compensation information has been treated as confidential.</p>
-        </div>
-      </div>
-    );
-  };
-
-  /**
-   * Overtime Authorization Voucher Document
-   * Distinct and Professional design
-   */
-  const OvertimeVoucherDocument = ({ item }: { item: PayrollItem }) => {
-    const branch = branches.find(b => b.id === myEmpData?.branchId) || branches[0];
-    const monthYear = new Date(item.runId.split('-')[1] + "-01");
-    const monthStr = monthYear.toLocaleString('default', { month: 'long' }).toUpperCase();
-
-    return (
-      <div className="bg-white w-[210mm] min-h-[148mm] p-12 text-black font-sans flex flex-col border-2 border-black relative print:border-none print:p-8">
-        <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-8">
-           <img src={LOGO_DARK_BG} alt="Logo" className="h-14 grayscale brightness-0 object-contain" />
-           <div className="text-right">
-              <h1 className="text-xl font-black uppercase tracking-tighter">OVERTIME AUTHORIZATION VOUCHER</h1>
-              <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">Verified Component Settlement</p>
-           </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-x-12 mb-10 text-black border border-black p-6">
-           <div className="space-y-3">
-              <div><p className="text-[10px] font-black uppercase text-gray-400">Personnel ID</p><p className="text-lg font-bold">{item.employeeId}</p></div>
-              <div><p className="text-[10px] font-black uppercase text-gray-400">Personnel Name</p><p className="text-lg font-bold uppercase">{item.employeeName}</p></div>
-           </div>
-           <div className="space-y-3 border-l border-black pl-8">
-              <div><p className="text-[10px] font-black uppercase text-gray-400">Reporting Period</p><p className="text-lg font-bold">{monthStr} {monthYear.getFullYear()}</p></div>
-              <div><p className="text-[10px] font-black uppercase text-gray-400">Voucher Ref</p><p className="text-lg font-bold font-mono">{item.id}-OT</p></div>
-           </div>
-        </div>
-
-        <div className="flex-1">
-           <table className="w-full border-collapse border border-black text-[12px]">
-              <thead>
-                 <tr className="bg-gray-100 font-black uppercase">
-                    <th className="border border-black p-3 text-left">Component Description</th>
-                    <th className="border border-black p-3 text-center">Approved Hours</th>
-                    <th className="border border-black p-3 text-center">Standard Rate</th>
-                    <th className="border border-black p-3 text-right">Total Net Cleared</th>
-                 </tr>
-              </thead>
-              <tbody>
-                 <tr>
-                    <td className="border border-black p-4 font-bold">Standard Overtime / Holiday Compensation</td>
-                    <td className="border border-black p-4 text-center font-black">{item.overtimeHours} HRS</td>
-                    <td className="border border-black p-4 text-center font-bold">₹ {myEmpData?.overtimeRatePerHour || 1500} / HR</td>
-                    <td className="border border-black p-4 text-right font-black text-lg">₹ {item.earnings.overtime.toLocaleString()}</td>
-                 </tr>
-              </tbody>
-           </table>
-        </div>
-
-        <div className="mt-10 flex justify-between items-end">
+        <div className="border-x border-b border-black p-4 flex items-center justify-between">
            <div className="flex items-center space-x-6">
-              <QRCode value={item.qrCode} size={60} fgColor="#000000" />
-              <div>
-                 <p className="text-[9px] font-black uppercase">Digitally Signed By</p>
-                 <p className="text-[11px] font-bold italic">{COMPANY_NAME}</p>
-              </div>
+              <QRCode value={item.qrCode} size={70} />
+              <div><p className="text-[12px] font-black uppercase">Net Salary Rs. {item.netSalary.toLocaleString()}</p><p className="text-[9px] font-bold italic mt-1">{numberToWords(item.netSalary)}</p></div>
            </div>
-           <div className="text-right">
-              <div className="w-48 h-10 border-b-2 border-black mb-1"></div>
-              <p className="text-[10px] font-black uppercase">Authorized HR Lead Signature</p>
-           </div>
+        </div>
+        <div className="mt-8 border border-black p-4 text-[9px] font-bold bg-gray-50 uppercase">
+           Note: System generated. No physical signature required.
         </div>
       </div>
     );
@@ -278,10 +169,7 @@ const EmployeePortal: React.FC<EmployeePortalProps> = ({ user, branches, payroll
 
   return (
     <div className="min-h-screen bg-[#f8f9fa] font-sans">
-      {isPrinting && viewingItem && createPortal(
-         printingType === 'PAYSLIP' ? <BW_PayslipDocument item={viewingItem} /> : <OvertimeVoucherDocument item={viewingItem} />, 
-         document.getElementById('print-portal')!
-      )}
+      {isPrinting && viewingItem && createPortal(<BW_PayslipDocument item={viewingItem} />, document.getElementById('print-portal')!)}
       
       <header className="bg-black text-white py-4 px-8 shadow-2xl sticky top-0 z-50">
          <div className="max-w-7xl mx-auto flex justify-between items-center">
@@ -298,12 +186,13 @@ const EmployeePortal: React.FC<EmployeePortalProps> = ({ user, branches, payroll
          </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-8 space-y-8 animate-in fade-in duration-500">
+      <main className="max-w-7xl mx-auto p-8 space-y-8 animate-in fade-in duration-500">
          <div className="bg-white rounded-[40px] shadow-2xl border border-black/5 overflow-hidden min-h-[600px] flex flex-col">
-            <div className="flex border-b border-black/5 bg-gray-50/50">
-                <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'dashboard' ? 'text-black border-b-2 border-black bg-white' : 'text-gray-400 hover:text-gray-600'}`}>My Dashboard</button>
-                <button onClick={() => setActiveTab('payslips')} className={`flex-1 py-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'payslips' ? 'text-black border-b-2 border-black bg-white' : 'text-gray-400 hover:text-gray-600'}`}>Salary & OT Vouchers</button>
-                <button onClick={() => setActiveTab('security')} className={`flex-1 py-6 text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'security' ? 'text-black border-b-2 border-black bg-white' : 'text-gray-400 hover:text-gray-600'}`}>Guard & Privacy</button>
+            <div className="flex border-b border-black/5 bg-gray-50/50 overflow-x-auto no-scrollbar">
+                <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-6 min-w-[150px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'dashboard' ? 'text-black border-b-2 border-black bg-white' : 'text-gray-400 hover:text-gray-600'}`}>My Dashboard</button>
+                <button onClick={() => setActiveTab('profile')} className={`flex-1 py-6 min-w-[150px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'profile' ? 'text-black border-b-2 border-black bg-white' : 'text-gray-400 hover:text-gray-600'}`}>Full Master Profile</button>
+                <button onClick={() => setActiveTab('payslips')} className={`flex-1 py-6 min-w-[150px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'payslips' ? 'text-black border-b-2 border-black bg-white' : 'text-gray-400 hover:text-gray-600'}`}>Salary & OT Vouchers</button>
+                <button onClick={() => setActiveTab('security')} className={`flex-1 py-6 min-w-[150px] text-[11px] font-black uppercase tracking-widest transition-all ${activeTab === 'security' ? 'text-black border-b-2 border-black bg-white' : 'text-gray-400 hover:text-gray-600'}`}>Guard & Privacy</button>
             </div>
 
             <div className="p-10 flex-1">
@@ -322,7 +211,6 @@ const EmployeePortal: React.FC<EmployeePortalProps> = ({ user, branches, payroll
                            </div>
                         </div>
                      </div>
-
                      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                         <div className="bg-black p-8 rounded-[40px] text-white shadow-2xl flex flex-col justify-between h-56 relative overflow-hidden group">
                            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700"></div>
@@ -335,7 +223,74 @@ const EmployeePortal: React.FC<EmployeePortalProps> = ({ user, branches, payroll
                         </div>
                         <div className="bg-white p-8 rounded-[40px] border border-black/5 shadow-sm h-56 flex flex-col justify-between group hover:shadow-xl transition-all">
                            <div><Landmark size={32} className="mb-4 text-black"/><h3 className="text-xs font-black uppercase text-gray-400">Advance Status</h3><p className="text-2xl font-black text-rose-600 mt-2">₹ {(myEmpData?.outstandingAdvance || 0).toLocaleString()}</p></div>
-                           <p className="text-[10px] font-bold text-rose-600 bg-rose-50 px-3 py-1 rounded-full w-fit uppercase tracking-tighter">Oustanding Loan</p>
+                           <p className="text-[10px] font-bold text-rose-600 bg-rose-50 px-3 py-1 rounded-full w-fit uppercase tracking-tighter">Outstanding Loan</p>
+                        </div>
+                     </div>
+                  </div>
+               )}
+
+               {activeTab === 'profile' && myEmpData && (
+                  <div className="space-y-12 animate-in fade-in">
+                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                        {/* 1. Personal Information */}
+                        <div className="space-y-6">
+                           <div className="flex items-center space-x-3 text-[#0854a0] border-b border-blue-50 pb-4">
+                              <User size={20}/><h3 className="text-[12px] font-black uppercase tracking-widest">Personal Identification</h3>
+                           </div>
+                           <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Full Name</p><p className="text-sm font-bold uppercase">{myEmpData.fullName}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Date of Birth</p><p className="text-sm font-bold">{myEmpData.dob}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Father's Name</p><p className="text-sm font-bold uppercase">{myEmpData.fatherName}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Mother's Name</p><p className="text-sm font-bold uppercase">{myEmpData.motherName}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Gender / Status</p><p className="text-sm font-bold uppercase">{myEmpData.gender} / {myEmpData.maritalStatus}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Nationality / Blood</p><p className="text-sm font-bold uppercase">{myEmpData.nationality} / {myEmpData.bloodGroup}</p></div>
+                           </div>
+                        </div>
+
+                        {/* 2. Contact & Address */}
+                        <div className="space-y-6">
+                           <div className="flex items-center space-x-3 text-emerald-600 border-b border-emerald-50 pb-4">
+                              <Phone size={20}/><h3 className="text-[12px] font-black uppercase tracking-widest">Connectivity & Domicile</h3>
+                           </div>
+                           <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Mobile</p><p className="text-sm font-bold">{myEmpData.mobile}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Official Email</p><p className="text-sm font-bold lowercase">{myEmpData.officialEmail}</p></div>
+                              <div className="col-span-2"><p className="text-[9px] font-black uppercase text-gray-400">Permanent Site</p><p className="text-sm font-bold uppercase">{myEmpData.permanentAddress.line1}, {myEmpData.permanentAddress.city}, {myEmpData.permanentAddress.state} - {myEmpData.permanentAddress.pincode}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Emergency Lead</p><p className="text-sm font-bold uppercase">{myEmpData.emergencyContactName}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Emergency Cell</p><p className="text-sm font-bold">{myEmpData.emergencyContactNumber}</p></div>
+                           </div>
+                        </div>
+
+                        {/* 3. Professional & Banking */}
+                        <div className="space-y-6">
+                           <div className="flex items-center space-x-3 text-amber-600 border-b border-amber-50 pb-4">
+                              <Briefcase size={20}/><h3 className="text-[12px] font-black uppercase tracking-widest">Professional & Financial Unit</h3>
+                           </div>
+                           <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Joining Date</p><p className="text-sm font-bold">{myEmpData.dateOfJoining}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Personnel Type</p><p className="text-sm font-bold uppercase">{myEmpData.employmentType}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Work Location</p><p className="text-sm font-bold uppercase">{branches.find(b=>b.id===myEmpData.branchId)?.name}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Department / Desig</p><p className="text-sm font-bold uppercase">{myEmpData.department} / {myEmpData.designation}</p></div>
+                              <div className="col-span-2 p-6 bg-gray-50 rounded-3xl border border-gray-100 grid grid-cols-2 gap-6">
+                                 <div><p className="text-[8px] font-black uppercase text-gray-400">Salary Mode / Bank</p><p className="text-xs font-bold uppercase">{myEmpData.bankDetails.paymentMode} - {myEmpData.bankDetails.bankName}</p></div>
+                                 <div><p className="text-[8px] font-black uppercase text-gray-400">A/C / IFSC</p><p className="text-xs font-bold font-mono">{myEmpData.bankDetails.accountNumber} / {myEmpData.bankDetails.ifscCode}</p></div>
+                              </div>
+                           </div>
+                        </div>
+
+                        {/* 4. Statutory Records */}
+                        <div className="space-y-6">
+                           <div className="flex items-center space-x-3 text-purple-600 border-b border-purple-50 pb-4">
+                              <ShieldCheck size={20}/><h3 className="text-[12px] font-black uppercase tracking-widest">Compliance & Statutory Ledger</h3>
+                           </div>
+                           <div className="grid grid-cols-2 gap-x-8 gap-y-6">
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Aadhaar Number</p><p className="text-sm font-bold font-mono">{myEmpData.aadhaar}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">PAN Record</p><p className="text-sm font-bold font-mono uppercase">{myEmpData.pan}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">UAN (Universal Account)</p><p className="text-sm font-bold font-mono">{myEmpData.uan}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">ESI Identity</p><p className="text-sm font-bold font-mono">{myEmpData.esiNo}</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">Fiscal Regime</p><p className="text-sm font-bold uppercase">{myEmpData.taxRegime} Tax System</p></div>
+                              <div><p className="text-[9px] font-black uppercase text-gray-400">PT State</p><p className="text-sm font-bold uppercase">{myEmpData.ptState}</p></div>
+                           </div>
                         </div>
                      </div>
                   </div>

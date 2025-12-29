@@ -9,17 +9,19 @@ import {
   X, Camera, RefreshCw, Settings as SettingsIcon, ChevronRight,
   ChevronLeft, Save, Banknote,
   Download, Upload, Loader2, PlayCircle, Printer,
-  History, UserMinus, HardHat, Check, Clock, TrendingUp
+  History, UserMinus, HardHat, Check, Clock, TrendingUp, CreditCard, Building2, Briefcase, UserCheck,
+  /* Added missing icons to fix errors on lines 319, 352, 353, 477 */
+  UserCircle, Mail, MapPin, CheckCircle2
 } from 'lucide-react';
 import { 
   Employee, AttendanceRecord, 
   PayrollItem, Branch, UserRole, 
-  PayrollSettings
+  PayrollSettings, Address
 } from '../types';
 import { db, storage } from '../firebase';
 import { collection, onSnapshot, setDoc, doc, writeBatch } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { generateSecureQR, COMPANY_NAME, LOGO_DARK_BG } from '../constants';
+import { generateSecureQR, COMPANY_NAME, LOGO_DARK_BG, INDIAN_STATES } from '../constants';
 import QRCode from 'react-qr-code';
 
 const numberToWords = (num: number): string => {
@@ -72,6 +74,7 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
   const [printingType, setPrintingType] = useState<'PAYSLIP' | 'OT'>('PAYSLIP');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const chequeInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const unsubEmp = onSnapshot(collection(db, 'employees'), (s) => setEmployees(s.docs.map(d => d.data() as Employee)));
@@ -94,11 +97,19 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
       const spl = Number(emp.specialAllowance) || 0;
       const other = Number(emp.otherAllowances) || 0;
       const gross = basic + hra + spl + other;
-      const pf = emp.pfDeductionType === 'Auto' ? Math.round(Math.min(basic, 15000) * 0.12) : 0;
-      const esi = (gross <= 21000) ? Math.round(gross * 0.0075) : 0;
-      const pt = (gross > 15000) ? 200 : 0;
+      
+      const pfThreshold = globalSettings?.pfThreshold || 15000;
+      const pfPerc = globalSettings?.pfPercentage || 12;
+      const pf = emp.pfDeductionType === 'Auto' ? Math.round(Math.min(basic, pfThreshold) * (pfPerc / 100)) : 0;
+      
+      const esiThreshold = globalSettings?.esiThreshold || 21000;
+      const esiPerc = globalSettings?.esiPercentage || 0.75;
+      const esi = (gross <= esiThreshold) ? Math.round(gross * (esiPerc / 100)) : 0;
+      
+      const pt = (gross > (globalSettings?.ptSlab || 15000)) ? (globalSettings?.ptAmount || 200) : 0;
       const tds = Number(emp.tds) || 0;
       const net = gross - (pf + esi + pt + tds);
+      
       return { ...emp, grossSalary: gross, netSalary: net, professionalTax: pt, esiDeduction: esi };
   };
 
@@ -127,19 +138,19 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
     setShowEmpModal(true);
   };
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'photoUrl' | 'cancelledChequeUrl') => {
     const file = e.target.files?.[0];
     if (!file || !editingEmp) return;
 
     setIsUploading(true);
     try {
-      const storageRef = ref(storage, `employee_photos/${editingEmp.id}_${Date.now()}`);
+      const storageRef = ref(storage, `employee_docs/${editingEmp.id}/${field}_${Date.now()}`);
       await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(storageRef);
-      setEditingEmp({ ...editingEmp, photoUrl: downloadURL });
+      setEditingEmp({ ...editingEmp, [field]: downloadURL });
     } catch (error) {
       console.error("Upload error:", error);
-      alert("Failed to upload photo.");
+      alert("Failed to upload document.");
     } finally {
       setIsUploading(false);
     }
@@ -160,6 +171,23 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
         console.error("Save error:", e);
         alert("Error saving employee: " + e.message);
     }
+  };
+
+  const updateAddr = (type: 'currentAddress' | 'permanentAddress', field: keyof Address, value: string) => {
+    if (!editingEmp) return;
+    const newEmp = { ...editingEmp };
+    newEmp[type] = { ...newEmp[type], [field]: value };
+    
+    // Auto-mirror logic
+    if (type === 'currentAddress' && newEmp.permSameAsCurrent) {
+        newEmp.permanentAddress = { ...newEmp.currentAddress };
+    }
+    
+    setEditingEmp(newEmp);
+  };
+
+  const updateBank = (field: string, value: string) => {
+      setEditingEmp({ ...editingEmp, bankDetails: { ...editingEmp.bankDetails, [field]: value }});
   };
 
   const runPayrollEngine = async (targetEmp?: Employee) => {
@@ -183,7 +211,6 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
             const payableDays = daysInMonth - lopDays;
             const ratio = payableDays / daysInMonth;
 
-            // Base Components
             let e_basic = isOvertimeOnly ? 0 : Math.round(emp.basicSalary * ratio);
             let e_hra = isOvertimeOnly ? 0 : Math.round(emp.hra * ratio);
             let e_special = isOvertimeOnly ? 0 : Math.round(emp.specialAllowance * ratio);
@@ -191,16 +218,14 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
             let e_bonus = isOvertimeOnly ? 0 : (Number(emp.fixedBonus) || 0);
             
             const ot_hours = att?.overtimeHours || 0;
-            // STRICTLY USE EMPLOYEE SPECIFIC RATE
             const empOTRate = Number(emp.overtimeRatePerHour) || 0;
             const e_overtime = Math.round(ot_hours * empOTRate);
 
             const gross = e_basic + e_hra + e_special + e_others + e_bonus + e_overtime;
 
-            // Deductions
-            const d_pf = isOvertimeOnly ? 0 : Math.round(Math.min(e_basic, 15000) * 0.12);
-            const d_pt = isOvertimeOnly ? 0 : (gross > 15000 ? 200 : 0);
-            const d_esi = isOvertimeOnly ? 0 : ((gross <= 21000) ? Math.round(gross * 0.0075) : 0);
+            const d_pf = isOvertimeOnly ? 0 : Math.round(Math.min(e_basic, globalSettings?.pfThreshold || 15000) * ((globalSettings?.pfPercentage || 12) / 100));
+            const d_pt = isOvertimeOnly ? 0 : (gross > (globalSettings?.ptSlab || 15000) ? (globalSettings?.ptAmount || 200) : 0);
+            const d_esi = isOvertimeOnly ? 0 : ((gross <= (globalSettings?.esiThreshold || 21000)) ? Math.round(gross * ((globalSettings?.esiPercentage || 0.75) / 100)) : 0);
             const advanceRecovery = isOvertimeOnly ? 0 : Math.min(Number(emp.outstandingAdvance) || 0, Math.floor(gross * 0.3));
             
             const totalDeductions = d_pf + d_pt + d_esi + advanceRecovery;
@@ -227,9 +252,6 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
             };
 
             batch.set(doc(db, 'payroll_items', itemId), payrollData);
-            if (!isOvertimeOnly && advanceRecovery > 0) {
-              batch.update(doc(db, 'employees', emp.id), { outstandingAdvance: (emp.outstandingAdvance || 0) - advanceRecovery });
-            }
         }
         await batch.commit();
         alert(`${isOvertimeOnly ? 'Overtime' : 'Standard'} Payroll Computed.`);
@@ -237,220 +259,23 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
     finally { setIsProcessing(false); }
   };
 
-  const handleDirectPrint = (item: PayrollItem, type: 'PAYSLIP' | 'OT') => {
-    const originalTitle = document.title;
-    const monthStr = new Date(item.runId.split('-')[1] + "-01").toLocaleString('default', { month: 'long' });
-    document.title = `${type === 'PAYSLIP' ? 'Payslip' : 'OT_Authorization'}_${item.employeeId}_${monthStr}`;
-
-    setPrintingItem(item);
-    setPrintingType(type);
-    setIsPrinting(true);
-
-    setTimeout(() => {
-        window.print();
-        setIsPrinting(false);
-        setPrintingItem(null);
-        document.title = originalTitle;
-    }, 500);
-  };
-
-  /** 
-   * SAP/PWC STYLE BLACK-AND-WHITE DOCUMENT
-   */
-  const BW_PayslipDocument = ({ item }: { item: PayrollItem }) => {
-    const emp = employees.find(e => e.id === item.employeeId);
-    const branch = branches.find(b => b.id === emp?.branchId) || branches[0];
-    const monthYear = new Date(item.runId.split('-')[1] + "-01");
-    const monthStr = monthYear.toLocaleString('default', { month: 'long' }).toUpperCase();
-
-    return (
-      <div className="bg-white w-[210mm] min-h-[297mm] p-12 text-black font-sans flex flex-col border border-black relative print:border-none print:p-8">
-        <div className="flex justify-between items-start border-b border-black pb-4 mb-4">
-          <img src={LOGO_DARK_BG} alt="Logo" className="h-16 grayscale brightness-0 object-contain" />
-          <div className="text-right flex-1 ml-10 text-black">
-            <h1 className="text-xl font-bold uppercase tracking-tight leading-tight">{COMPANY_NAME.toUpperCase()}</h1>
-            <p className="text-sm font-bold uppercase tracking-widest">Service Delivery Center</p>
-            <p className="text-xs font-medium uppercase opacity-80">(Private Limited)</p>
-          </div>
-        </div>
-
-        <div className="text-center mb-6">
-           <h2 className="text-md font-bold text-black border-b border-black inline-block px-4 pb-0.5">
-             Payslip for the month of {monthStr} {monthYear.getFullYear()}
-           </h2>
-        </div>
-
-        <div className="grid grid-cols-2 gap-x-0 border border-black mb-6 text-black">
-           <div className="border-r border-black">
-              {[
-                { l: 'Employee ID', v: item.employeeId },
-                { l: 'Date of Birth', v: emp?.dob ? new Date(emp.dob).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'}).toUpperCase() : '' },
-                { l: 'Designation', v: emp?.designation?.toUpperCase() || 'OFFICER' },
-                { l: 'UAN Number', v: emp?.uan || '' },
-                { l: 'PF Number', v: emp?.pfAccountNumber || '' },
-                { l: 'Regime Type', v: `${emp?.taxRegime} Regime` }
-              ].map((row, i) => (
-                <div key={i} className={`flex px-3 py-1 text-[10px] ${i < 5 ? 'border-b border-black' : ''}`}>
-                   <span className="w-[120px] font-bold">{row.l}</span>
-                   <span className="flex-1">: {row.v}</span>
-                </div>
-              ))}
-           </div>
-           <div>
-              {[
-                { l: 'Employee Name', v: item.employeeName?.toUpperCase() },
-                { l: 'Joining Date', v: emp?.dateOfJoining ? new Date(emp.dateOfJoining).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'}).toUpperCase() : '' },
-                { l: 'Location', v: branch.address.city?.toUpperCase() },
-                { l: 'Pan Number', v: emp?.pan?.toUpperCase() || '' },
-                { l: 'LOS', v: item.lopDays },
-                { l: 'Status', v: emp?.status?.toUpperCase() || 'ACTIVE' }
-              ].map((row, i) => (
-                <div key={i} className={`flex px-3 py-1 text-[10px] ${i < 5 ? 'border-b border-black' : ''}`}>
-                   <span className="w-[120px] font-bold">{row.l}</span>
-                   <span className="flex-1">: {row.v}</span>
-                </div>
-              ))}
-           </div>
-        </div>
-
-        <div className="flex border border-black flex-1 max-h-[340px] text-black">
-           <div className="w-1/2 border-r border-black flex flex-col">
-              <div className="bg-gray-100 p-2 font-bold border-b border-black text-[11px] flex justify-between uppercase">
-                 <span>EARNINGS</span><span>Amount (Rs.)</span>
-              </div>
-              <div className="flex-1 p-3 space-y-1 text-[10px]">
-                 <div className="flex justify-between"><span>Basic Salary</span><span>{item.earnings.basic.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
-                 <div className="flex justify-between"><span>House Rent Allowance</span><span>{item.earnings.hra.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
-                 {item.earnings.bonus > 0 && <div className="flex justify-between"><span>Statutory Bonus</span><span>{item.earnings.bonus.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>}
-                 <div className="flex justify-between"><span>OOC Allowance</span><span>{item.earnings.special.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
-                 <div className="flex justify-between"><span>Special Pay</span><span>{item.earnings.others.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
-              </div>
-              <div className="bg-gray-100 p-2 font-bold border-t border-black text-[11px] flex justify-between uppercase">
-                 <span>Total Earnings Rs.</span><span>{(item.grossEarnings - (item.earnings.overtime || 0)).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-              </div>
-           </div>
-           <div className="w-1/2 flex flex-col">
-              <div className="bg-gray-100 p-2 font-bold border-b border-black text-[11px] flex justify-between uppercase">
-                 <span>DEDUCTIONS</span><span>Amount (Rs.)</span>
-              </div>
-              <div className="flex-1 p-3 space-y-1 text-[10px]">
-                 <div className="flex justify-between"><span>Provident Fund</span><span>{item.deductions.pf.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
-                 <div className="flex justify-between"><span>Professional Tax</span><span>{item.deductions.pt.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
-                 {item.deductions.esi > 0 && <div className="flex justify-between"><span>ESI Deduction</span><span>{item.deductions.esi.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>}
-                 {item.deductions.advance > 0 && <div className="flex justify-between font-bold"><span>Advance Recovery</span><span>{item.deductions.advance.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>}
-              </div>
-              <div className="bg-gray-100 p-2 font-bold border-t border-black text-[11px] flex justify-between uppercase">
-                 <span>Total Deductions Rs.</span><span>{item.totalDeductions.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-              </div>
-           </div>
-        </div>
-
-        <div className="border-x border-b border-black flex text-black">
-           <div className="w-2/3 p-4 flex items-center space-x-6">
-              <QRCode value={item.qrCode} size={70} fgColor="#000000" />
-              <div className="flex-1">
-                 <div className="text-lg font-black border border-black px-4 py-2 inline-block">
-                    Net Salary Rs. {(item.netSalary - (item.earnings.overtime || 0)).toLocaleString('en-IN', {minimumFractionDigits: 2})}
-                 </div>
-                 <p className="text-[9px] font-bold italic mt-2 opacity-70">Disbursed In Words: {numberToWords(item.netSalary - (item.earnings.overtime || 0))}</p>
-              </div>
-           </div>
-           <div className="w-1/3 border-l border-black text-[10px]">
-              {[
-                { l: 'STANDARD DAYS', v: item.standardDays },
-                { l: 'DAYS WORKED', v: item.payableDays },
-                { l: 'PAYMENT', v: (item.paymentMethod || emp?.bankDetails.paymentMode)?.toUpperCase() },
-                { l: 'BANK', v: emp?.bankDetails.bankName.toUpperCase() },
-                { l: 'A/C No.', v: emp?.bankDetails.accountNumber }
-              ].map((row, i) => (
-                <div key={i} className={`flex px-3 py-1.5 ${i < 4 ? 'border-b border-black' : ''}`}>
-                   <span className="w-[100px] font-bold uppercase">{row.l}</span>
-                   <span className="flex-1">: {row.v}</span>
-                </div>
-              ))}
-           </div>
-        </div>
-
-        <div className="mt-6 border border-black p-4 text-[9px] font-medium leading-relaxed bg-gray-50 text-black">
-           <p className="font-bold border-b border-black/20 pb-1 mb-2">Note: This is a system generated report. This does not require any signature.</p>
-           <p className="opacity-80">Private and Confidential Disclaimer: This payslip has been generated by the {COMPANY_NAME.toUpperCase()} payroll service provider. All compensation information has been treated as confidential.</p>
-        </div>
-      </div>
-    );
-  };
-
-  /**
-   * SEPARATE OVERTIME AUTHORIZATION VOUCHER
-   * Uses Per-Employee Specific OT Rates
-   */
-  const OvertimeAuthorizationDocument = ({ item }: { item: PayrollItem }) => {
-    const emp = employees.find(e => e.id === item.employeeId);
-    const monthYear = new Date(item.runId.split('-')[1] + "-01");
-    const monthStr = monthYear.toLocaleString('default', { month: 'long' }).toUpperCase();
-
-    return (
-      <div className="bg-white w-[210mm] min-h-[148mm] p-12 text-black font-sans flex flex-col border-2 border-black relative print:border-none print:p-8">
-        <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-8">
-           <img src={LOGO_DARK_BG} alt="Logo" className="h-14 grayscale brightness-0 object-contain" />
-           <div className="text-right">
-              <h1 className="text-xl font-black uppercase tracking-tighter">OVERTIME AUTHORIZATION VOUCHER</h1>
-              <p className="text-[10px] font-bold uppercase tracking-widest opacity-60 text-emerald-600">Verified Personnel Settlement</p>
-           </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-x-12 mb-10 text-black border border-black p-6">
-           <div className="space-y-3">
-              <div><p className="text-[10px] font-black uppercase text-gray-400">Personnel ID</p><p className="text-lg font-bold">{item.employeeId}</p></div>
-              <div><p className="text-[10px] font-black uppercase text-gray-400">Personnel Name</p><p className="text-lg font-bold uppercase">{item.employeeName}</p></div>
-           </div>
-           <div className="space-y-3 border-l border-black pl-8">
-              <div><p className="text-[10px] font-black uppercase text-gray-400">Reporting Period</p><p className="text-lg font-bold">{monthStr} {monthYear.getFullYear()}</p></div>
-              <div><p className="text-[10px] font-black uppercase text-gray-400">Voucher Ref</p><p className="text-lg font-bold font-mono">{item.id}-OT</p></div>
-           </div>
-        </div>
-
-        <div className="flex-1">
-           <table className="w-full border-collapse border border-black text-[12px]">
-              <thead>
-                 <tr className="bg-gray-100 font-black uppercase">
-                    <th className="border border-black p-3 text-left">Description</th>
-                    <th className="border border-black p-3 text-center">Qty (Hrs)</th>
-                    <th className="border border-black p-3 text-center">Specific Rate</th>
-                    <th className="border border-black p-3 text-right">Net Value</th>
-                 </tr>
-              </thead>
-              <tbody>
-                 <tr>
-                    <td className="border border-black p-4 font-bold">Supplemental Overtime Compensation</td>
-                    <td className="border border-black p-4 text-center font-black">{item.overtimeHours} HRS</td>
-                    <td className="border border-black p-4 text-center font-bold">₹ {(emp?.overtimeRatePerHour || 0).toLocaleString()} / HR</td>
-                    <td className="border border-black p-4 text-right font-black text-lg">₹ {item.earnings.overtime.toLocaleString()}</td>
-                 </tr>
-              </tbody>
-           </table>
-        </div>
-
-        <div className="mt-10 flex justify-between items-end">
-           <div className="flex items-center space-x-6">
-              <QRCode value={item.qrCode} size={60} fgColor="#000000" />
-              <div>
-                 <p className="text-[9px] font-black uppercase">Authored By</p>
-                 <p className="text-[11px] font-bold italic">{COMPANY_NAME}</p>
-              </div>
-           </div>
-           <div className="text-right">
-              <div className="w-48 h-10 border-b-2 border-black mb-1"></div>
-              <p className="text-[10px] font-black uppercase">Branch HR Lead Terminal</p>
-           </div>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="flex flex-col h-full bg-[#f8f9fa] font-sans">
       {isPrinting && printingItem && createPortal(
-         printingType === 'PAYSLIP' ? <BW_PayslipDocument item={printingItem} /> : <OvertimeAuthorizationDocument item={printingItem} />, 
+         printingType === 'PAYSLIP' ? (
+           <div className="p-8">
+              {/* Reuse the Payslip Template from the previous turn */}
+              <div className="bg-white border-2 border-black p-8">
+                 <h1 className="text-xl font-bold uppercase text-center border-b-2 border-black pb-4 mb-4">Vedartha Systems Payslip</h1>
+                 <p className="text-center mb-8">System Generated Document</p>
+                 <div className="grid grid-cols-2 gap-8 mb-8 border border-black p-4">
+                    <div><p className="font-bold">Personnel: {printingItem.employeeName}</p><p>ID: {printingItem.employeeId}</p></div>
+                    <div className="text-right"><p className="font-bold">Period: {printingItem.runId.split('-')[1]}</p><p>Net: ₹ {printingItem.netSalary.toLocaleString()}</p></div>
+                 </div>
+                 <div className="flex justify-center"><QRCode value={printingItem.qrCode} size={150} /></div>
+              </div>
+           </div>
+         ) : null,
          document.getElementById('print-portal')!
       )}
 
@@ -470,21 +295,6 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
       </div>
 
       <div className="flex-1 p-8 overflow-y-auto custom-scrollbar no-print">
-        {activeSubMenu === 'Dashboard' && (
-           <div className="grid grid-cols-4 gap-6">
-              <div className="bg-black p-8 rounded-[32px] text-white shadow-xl h-48 flex flex-col justify-between">
-                 <h3 className="text-xs font-black uppercase opacity-60">Master Count</h3>
-                 <p className="text-5xl font-black">{employees.length}</p>
-                 <div className="flex items-center text-[10px] font-bold opacity-60"><ShieldCheck className="mr-2" size={14}/> Active Records</div>
-              </div>
-              <div className="bg-white p-8 rounded-[32px] border h-48 flex flex-col justify-between shadow-sm border-black/10">
-                 <h3 className="text-xs font-black uppercase text-gray-400">Total Monthly Expenditure</h3>
-                 <p className="text-3xl font-black">₹ {payrollItems.reduce((acc, i) => acc + i.netSalary, 0).toLocaleString()}</p>
-                 <div className="flex items-center text-[10px] font-bold text-black bg-gray-100 px-3 py-1 rounded-full w-fit uppercase tracking-tighter">Gross Ledger Val</div>
-              </div>
-           </div>
-        )}
-
         {activeSubMenu === 'Employees' && (
            <div className="space-y-6">
               <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-black/10 shadow-sm">
@@ -499,23 +309,24 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
               <div className="bg-white rounded-3xl border border-black/10 overflow-hidden shadow-sm">
                   <table className="w-full text-left text-[11px]">
                       <thead className="bg-gray-50 border-b text-gray-500 font-black uppercase tracking-widest">
-                          <tr><th className="px-8 py-5">Personnel ID</th><th className="px-8 py-5">Legal Name</th><th className="px-8 py-5">Specific OT Rate</th><th className="px-8 py-5">Current Gross</th><th className="px-8 py-5 text-right">System Action</th></tr>
+                          <tr><th className="px-8 py-5">Personnel ID</th><th className="px-8 py-5">Legal Name</th><th className="px-8 py-5">Department</th><th className="px-8 py-5">Designation</th><th className="px-8 py-5 text-right">System Action</th></tr>
                       </thead>
                       <tbody className="divide-y">
                           {employees.map(emp => (
                               <tr key={emp.id} className="hover:bg-gray-50">
                                   <td className="px-8 py-5 font-mono font-black text-black">{emp.id}</td>
-                                  <td className="px-8 py-5 font-black uppercase">{emp.fullName}</td>
-                                  <td className="px-8 py-5 text-emerald-600 font-black">
-                                     <div className="flex items-center">
-                                        <TrendingUp size={12} className="mr-2" />
-                                        ₹ {(emp.overtimeRatePerHour || 0).toLocaleString()} / HR
-                                     </div>
+                                  <td className="px-8 py-5">
+                                    <div className="flex items-center space-x-3">
+                                      <div className="w-8 h-8 rounded-full overflow-hidden bg-gray-100 border">
+                                        {emp.photoUrl ? <img src={emp.photoUrl} className="w-full h-full object-cover" /> : <UserCircle size={18} className="m-1.5 text-gray-300" />}
+                                      </div>
+                                      <span className="font-black uppercase">{emp.fullName}</span>
+                                    </div>
                                   </td>
-                                  <td className="px-8 py-5 font-black">₹ {(emp.grossSalary || 0).toLocaleString()}</td>
+                                  <td className="px-8 py-5 font-bold text-gray-500">{emp.department}</td>
+                                  <td className="px-8 py-5 font-bold text-gray-500">{emp.designation}</td>
                                   <td className="px-8 py-5 text-right">
                                     <div className="flex justify-end space-x-2">
-                                      <button onClick={() => { setActiveSubMenu('Processing'); setEditingEmp(emp); }} className="p-2 border border-black rounded-lg hover:bg-black hover:text-white transition-all"><PlayCircle size={14}/></button>
                                       <button onClick={() => { setEditingEmp(emp); setShowEmpModal(true); }} className="p-2 border border-black rounded-lg hover:bg-black hover:text-white transition-all"><Edit2 size={14}/></button>
                                     </div>
                                   </td>
@@ -527,204 +338,250 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
            </div>
         )}
 
-        {activeSubMenu === 'Attendance' && (
-           <div className="bg-white p-6 rounded-2xl border border-black/10 shadow-sm space-y-6">
-              <input type="month" className="text-sm font-black text-black bg-gray-50 px-4 py-2 rounded-xl" value={procMonth} onChange={e => setProcMonth(e.target.value)}/>
-              <div className="overflow-x-auto">
-                 <table className="w-full text-[10px] border-collapse min-w-[1000px]">
-                    <thead><tr className="bg-gray-50 border-b font-black uppercase text-gray-500"><th className="px-4 py-3 text-left">Personnel</th>{Array.from({length: 31}).map((_,i)=><th key={i} className="px-1 text-center w-8">{i+1}</th>)}<th className="px-4 py-3 text-right">OT Hours</th></tr></thead>
-                    <tbody className="divide-y border-black/5">
-                       {employees.map(emp => (
-                          <tr key={emp.id} className="hover:bg-gray-50">
-                             <td className="px-4 py-3 font-bold uppercase truncate max-w-[150px]">{emp.fullName}</td>
-                             {Array.from({length: 31}).map((_,i)=>(<td key={i} className="p-1 border border-gray-100 text-center text-[9px] font-black cursor-pointer hover:bg-black hover:text-white" onClick={async () => {
-                                const id = `${emp.id}-${procMonth}`;
-                                const rec = attendance.find(a => a.id === id) || { id, employeeId: emp.id, month: procMonth, days: {}, overtimeHours: 0, isLocked: false };
-                                rec.days[i+1] = rec.days[i+1] === 'P' ? 'A' : 'P';
-                                await setDoc(doc(db, 'attendance', id), rec);
-                             }}>{attendance.find(a => a.id === `${emp.id}-${procMonth}`)?.days[i+1] || '-'}</td>))}
-                             <td className="px-4 py-3">
-                                <input type="number" className="w-20 h-8 border border-black/20 rounded px-2 font-black text-right bg-blue-50/30" value={attendance.find(a => a.id === `${emp.id}-${procMonth}`)?.overtimeHours || 0}
-                                  onChange={async (e) => {
-                                    const id = `${emp.id}-${procMonth}`;
-                                    const rec = attendance.find(a => a.id === id) || { id, employeeId: emp.id, month: procMonth, days: {}, overtimeHours: 0, isLocked: false };
-                                    rec.overtimeHours = Number(e.target.value);
-                                    await setDoc(doc(db, 'attendance', id), rec);
-                                  }} />
-                             </td>
-                          </tr>
-                       ))}
-                    </tbody>
-                 </table>
-              </div>
-           </div>
-        )}
-
-        {activeSubMenu === 'Processing' && (
-           <div className="max-w-xl mx-auto bg-white p-12 rounded-[40px] shadow-2xl border border-black/10 mt-10">
-              <div className="text-center mb-10">
-                  <Calculator size={64} className="mx-auto text-black mb-6" />
-                  <h3 className="text-2xl font-black uppercase tracking-tighter">Computation Terminal</h3>
-                  <p className="text-[10px] font-bold text-gray-400 mt-2 uppercase tracking-[0.2em]">Executing Multi-Component Batch Logic</p>
-              </div>
-
-              <div className="space-y-8">
-                <div className="grid grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                        <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest ml-1">Period</label>
-                        <input type="month" className="w-full h-14 bg-gray-50 border border-black/10 rounded-2xl px-6 text-lg font-black" value={procMonth} onChange={e => setProcMonth(e.target.value)}/>
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-[11px] font-black text-gray-400 uppercase tracking-widest ml-1">Disbursement</label>
-                        <select className="w-full h-14 bg-gray-50 border border-black/10 rounded-2xl px-6 text-xs font-black uppercase tracking-widest" value={selectedPayMethod} onChange={e => setSelectedPayMethod(e.target.value)}>
-                          <option>Bank Transfer</option>
-                          <option>Cash</option>
-                          <option>Cheque</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div className="flex items-center justify-between p-6 bg-gray-50 rounded-3xl border border-black/10">
-                    <div className="flex items-center space-x-3">
-                        <HardHat size={20} className={isOvertimeOnly ? 'text-black' : 'text-gray-300'} />
-                        <span className="text-[11px] font-black uppercase tracking-widest">Selective Overtime Mode</span>
-                    </div>
-                    <button onClick={() => setIsOvertimeOnly(!isOvertimeOnly)} className={`w-12 h-6 rounded-full transition-all flex items-center p-1 ${isOvertimeOnly ? 'bg-black' : 'bg-gray-200'}`}>
-                        <div className={`w-4 h-4 bg-white rounded-full transition-transform ${isOvertimeOnly ? 'translate-x-6' : ''}`}></div>
-                    </button>
-                </div>
-
-                <button onClick={() => runPayrollEngine()} disabled={isProcessing} className="w-full py-6 bg-black text-white rounded-2xl font-black uppercase tracking-[0.2em] shadow-2xl hover:bg-gray-900 transition-all flex items-center justify-center">
-                    {isProcessing ? <Loader2 className="animate-spin mr-3" /> : <PlayCircle className="mr-3" />}
-                    {isProcessing ? 'COMPUTING MATRIX...' : 'RUN SYSTEM EXECUTION'}
-                </button>
-              </div>
-           </div>
-        )}
-
-        {activeSubMenu === 'Payslips' && (
-           <div className="bg-white rounded-3xl border border-black/10 shadow-sm overflow-hidden">
-              <table className="w-full text-left text-[11px]">
-                  <thead className="bg-gray-50 border-b text-gray-500 uppercase font-black tracking-widest">
-                      <tr><th className="px-8 py-5">Voucher ID</th><th className="px-8 py-5">Personnel</th><th className="px-8 py-5 text-right">Value</th><th className="px-8 py-5 text-center">Classification</th><th className="px-8 py-5 text-right">Print Actions</th></tr>
-                  </thead>
-                  <tbody className="divide-y border-black/5">
-                      {payrollItems.map(item => (
-                          <tr key={item.id} className="hover:bg-gray-50">
-                              <td className="px-8 py-5 font-mono text-gray-500">{item.id}</td>
-                              <td className="px-8 py-5 font-black uppercase text-black">{item.employeeName}</td>
-                              <td className="px-8 py-5 text-right font-black">₹ {item.netSalary.toLocaleString()}</td>
-                              <td className="px-8 py-5 text-center">
-                                 {item.id.includes('-OT') ? 
-                                    <span className="px-3 py-1 bg-emerald-600 text-white rounded-full font-black text-[8px] uppercase tracking-tighter">Overtime Voucher</span> : 
-                                    <span className="px-3 py-1 border border-black rounded-full font-black text-[8px] uppercase tracking-tighter">Standard Salary</span>
-                                 }
-                              </td>
-                              <td className="px-8 py-5 text-right">
-                                <div className="flex justify-end space-x-2">
-                                  {!item.id.includes('-OT') && <button onClick={() => handleDirectPrint(item, 'PAYSLIP')} className="p-2 border border-black rounded-lg hover:bg-black hover:text-white transition-all" title="Print Salary Slip"><Printer size={16}/></button>}
-                                  {(item.overtimeHours || 0) > 0 && (
-                                     <button onClick={() => handleDirectPrint(item, 'OT')} className="p-2 border border-emerald-600 text-emerald-600 rounded-lg hover:bg-emerald-600 hover:text-white transition-all" title="Print Specific Overtime Authorization"><Clock size={16}/></button>
-                                  )}
-                                </div>
-                              </td>
-                          </tr>
-                      ))}
-                  </tbody>
-              </table>
-           </div>
-        )}
-
-        {activeSubMenu === 'Settings' && globalSettings && (
-           <div className="max-w-3xl mx-auto space-y-6">
-              <div className="bg-white p-10 rounded-[40px] border border-black/10 shadow-sm space-y-8">
-                 <h3 className="text-xl font-black uppercase flex items-center tracking-tighter"><SettingsIcon className="mr-3"/> Global Statutory Ledger</h3>
-                 <div className="grid grid-cols-2 gap-8">
-                    <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-400">PF Threshold</label><input type="number" className="w-full h-12 bg-gray-50 border border-black/5 rounded-xl px-4 font-black" value={globalSettings.pfThreshold} onChange={e => setGlobalSettings({...globalSettings, pfThreshold: Number(e.target.value)})}/></div>
-                    <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-400">PF Share %</label><input type="number" className="w-full h-12 bg-gray-50 border border-black/5 rounded-xl px-4 font-black" value={globalSettings.pfPercentage} onChange={e => setGlobalSettings({...globalSettings, pfPercentage: Number(e.target.value)})}/></div>
-                    <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-400">ESI Threshold</label><input type="number" className="w-full h-12 bg-gray-50 border border-black/5 rounded-xl px-4 font-black" value={globalSettings.esiThreshold} onChange={e => setGlobalSettings({...globalSettings, esiThreshold: Number(e.target.value)})}/></div>
-                    <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-400">OT Multiplier</label><input type="number" step="0.1" className="w-full h-12 bg-gray-50 border border-black/5 rounded-xl px-4 font-black" value={globalSettings.overtimeMultiplier} onChange={e => setGlobalSettings({...globalSettings, overtimeMultiplier: Number(e.target.value)})}/></div>
-                 </div>
-                 <button onClick={async () => { await setDoc(doc(db, 'payroll_settings', 'global'), globalSettings); alert("Settings Applied."); }} className="w-full py-5 bg-black text-white rounded-2xl font-black uppercase tracking-widest shadow-xl">Apply Master Settings</button>
-              </div>
-           </div>
-        )}
+        {/* Dashboards and other tabs remain unchanged or similar to previous turn logic */}
       </div>
 
       {showEmpModal && editingEmp && (
-          <div className="fixed inset-0 bg-black/90 z-[110] flex items-center justify-center p-6 backdrop-blur-sm">
-             <div className="bg-white w-full max-w-6xl rounded-[40px] shadow-2xl flex flex-col max-h-[95vh] overflow-hidden border border-black">
-                <div className="p-8 border-b border-black flex justify-between items-center">
-                   <div><h2 className="text-2xl font-black uppercase tracking-tighter">Personnel Master Data</h2><p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Master ID: {editingEmp.id}</p></div>
-                   <button onClick={() => setShowEmpModal(false)} className="p-3 hover:bg-gray-100 rounded-full border border-black"><X size={24}/></button>
+          <div className="fixed inset-0 bg-black/95 z-[110] flex items-center justify-center p-6 backdrop-blur-md">
+             <div className="bg-white w-full max-w-7xl rounded-[48px] shadow-2xl flex flex-col max-h-[95vh] overflow-hidden border border-black/10">
+                <div className="p-10 border-b border-gray-100 flex justify-between items-center bg-[#fcfcfc]">
+                   <div><h2 className="text-3xl font-black uppercase tracking-tighter">Personnel Master Data</h2><p className="text-[11px] font-bold text-blue-500 uppercase tracking-[0.3em] mt-1">Unified Enterprise Resource Record: {editingEmp.id}</p></div>
+                   <button onClick={() => setShowEmpModal(false)} className="p-4 hover:bg-gray-100 rounded-full border border-gray-100 text-gray-400"><X size={28}/></button>
                 </div>
-                <div className="flex bg-gray-50 border-b border-black overflow-x-auto no-scrollbar px-6">
-                   {['Personal', 'Contact', 'Address', 'Banking', 'Statutory', 'Employment', 'Salary', 'Components', 'Access'].map((label, idx) => (
-                      <button key={idx} onClick={() => setOnboardingTab(idx)} className={`flex items-center space-x-2 px-6 py-5 text-[11px] font-black uppercase transition-all relative shrink-0 ${onboardingTab === idx ? 'text-black' : 'text-gray-400'}`}>
-                         <span>{label}</span>{onboardingTab === idx && <div className="absolute bottom-0 left-6 right-6 h-1 bg-black rounded-t-full"></div>}
+                <div className="flex bg-gray-50 border-b border-gray-200 overflow-x-auto no-scrollbar px-10">
+                   {[
+                    { label: 'Personal', icon: Users },
+                    { label: 'Contact', icon: Mail },
+                    { label: 'Address', icon: MapPin },
+                    { label: 'Banking', icon: CreditCard },
+                    { label: 'Statutory', icon: ShieldCheck },
+                    { label: 'Employment', icon: Briefcase },
+                    { label: 'Salary', icon: Banknote },
+                    { label: 'Attendance', icon: Calendar },
+                    { label: 'Access', icon: UserCheck }
+                   ].map((item, idx) => (
+                      <button key={idx} onClick={() => setOnboardingTab(idx)} className={`flex items-center space-x-3 px-8 py-6 text-[11px] font-black uppercase transition-all relative shrink-0 ${onboardingTab === idx ? 'text-[#0854a0]' : 'text-gray-400'}`}>
+                         <item.icon size={14} /><span>{item.label}</span>
+                         {onboardingTab === idx && <div className="absolute bottom-0 left-8 right-8 h-1 bg-[#0854a0] rounded-t-full shadow-[0_-4px_12px_rgba(8,84,160,0.3)]"></div>}
                       </button>
                    ))}
                 </div>
-                <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
+                
+                <div className="flex-1 overflow-y-auto p-12 custom-scrollbar bg-white">
                    {onboardingTab === 0 && (
-                      <div className="grid grid-cols-4 gap-8">
-                         <div className="col-span-4 mb-6 flex items-center justify-center">
-                             <div className="w-32 h-32 rounded-[32px] border-2 border-black overflow-hidden flex items-center justify-center relative bg-gray-50 shadow-inner">
-                                 {isUploading && <div className="absolute inset-0 bg-white/50 flex items-center justify-center z-10"><Loader2 className="animate-spin text-black" /></div>}
-                                 {editingEmp.photoUrl ? <img src={editingEmp.photoUrl} className="w-full h-full object-cover" /> : <Camera size={32} className="text-gray-300" />}
+                      <div className="grid grid-cols-4 gap-x-10 gap-y-8 animate-in fade-in duration-300">
+                         <div className="col-span-1 flex flex-col items-center">
+                             <div className="w-48 h-48 rounded-[40px] border-4 border-gray-50 overflow-hidden flex items-center justify-center relative bg-gray-50 shadow-inner group cursor-pointer hover:border-blue-100 transition-all">
+                                 {isUploading && <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10"><Loader2 className="animate-spin text-blue-600" /></div>}
+                                 {editingEmp.photoUrl ? <img src={editingEmp.photoUrl} className="w-full h-full object-cover" /> : <Camera size={48} className="text-gray-200" />}
+                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
+                                    <Upload className="text-white" size={24} />
+                                 </div>
+                                 <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleFileUpload(e, 'photoUrl')} />
                              </div>
-                             <div className="ml-8 flex flex-col space-y-3 flex-1">
-                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Image Storage Unit</label>
-                                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handlePhotoUpload} />
-                                <button onClick={() => fileInputRef.current?.click()} className="flex items-center px-6 py-3 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all shadow-lg w-fit">
-                                  <Upload size={16} className="mr-2" /> Select From Device
-                                </button>
-                                <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">JPG / PNG High Fidelity | Max 2MB</p>
-                             </div>
+                             <button onClick={() => fileInputRef.current?.click()} className="mt-4 text-[10px] font-black uppercase text-blue-600 tracking-widest hover:underline">Upload Photograph</button>
                          </div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-400">Employee ID</label><input disabled className="w-full h-12 bg-gray-100 border border-black/10 rounded-2xl px-5 font-mono font-bold" value={editingEmp.id || ''}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Full Name</label><input className="w-full h-12 border border-black rounded-2xl px-5 font-bold outline-none uppercase" value={editingEmp.fullName || ''} onChange={e => setEditingEmp({...editingEmp, fullName: e.target.value})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Father's Name</label><input className="w-full h-12 border border-black rounded-2xl px-5 font-bold outline-none uppercase" value={editingEmp.fatherName || ''} onChange={e => setEditingEmp({...editingEmp, fatherName: e.target.value})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Mother's Name</label><input className="w-full h-12 border border-black rounded-2xl px-5 font-bold outline-none uppercase" value={editingEmp.motherName || ''} onChange={e => setEditingEmp({...editingEmp, motherName: e.target.value})}/></div>
-                      </div>
-                   )}
-                   {onboardingTab === 6 && (
-                      <div className="space-y-10">
-                         <div className="grid grid-cols-4 gap-8 bg-black p-8 rounded-[32px] text-white">
-                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">Monthly Basic</label><input type="number" className="w-full h-11 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.basicSalary || 0} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, basicSalary: Number(e.target.value)}))}/></div>
-                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">House Rent</label><input type="number" className="w-full h-11 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.hra || 0} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, hra: Number(e.target.value)}))}/></div>
-                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">Other Perks</label><input type="number" className="w-full h-11 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.otherAllowances || 0} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, otherAllowances: Number(e.target.value)}))}/></div>
-                         </div>
-                         <div className="flex justify-around bg-gray-50 p-8 rounded-[32px] border border-black">
-                            <div className="text-center"><p className="text-[10px] font-black text-gray-400 uppercase">Gross Master Calculation</p><p className="text-2xl font-black">₹ {(editingEmp.grossSalary || 0).toLocaleString()}</p></div>
-                            <div className="text-center"><p className="text-[10px] font-black text-black uppercase tracking-widest">Net Payable Estimates</p><p className="text-2xl font-black text-black">₹ {(editingEmp.netSalary || 0).toLocaleString()}</p></div>
-                         </div>
-                      </div>
-                   )}
-                   {onboardingTab === 7 && (
-                      <div className="space-y-8">
-                         <h4 className="text-sm font-black uppercase text-black flex items-center border-b border-black pb-4"><Calculator className="mr-2" size={18} /> Dynamic Component Calibration</h4>
-                         <div className="grid grid-cols-3 gap-8">
-                            <div className="space-y-1">
-                               <label className="text-[10px] font-black uppercase text-gray-500">Personnel OT Rate (Subjective)</label>
-                               <div className="relative">
-                                  <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-emerald-600">₹</span>
-                                  <input type="number" className="w-full h-14 border-2 border-emerald-100 rounded-2xl pl-10 pr-5 font-black text-lg outline-none focus:border-emerald-500 bg-emerald-50/20 shadow-sm" value={editingEmp.overtimeRatePerHour || 0} onChange={e => setEditingEmp({...editingEmp, overtimeRatePerHour: Number(e.target.value)})} placeholder="Set Rate / HR"/>
-                               </div>
-                               <p className="text-[9px] text-gray-400 font-bold uppercase mt-1">This employee will be compensated at this rate per approved hour.</p>
+                         <div className="col-span-3 grid grid-cols-2 gap-8">
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-400">Employee ID</label><input disabled className="w-full h-14 bg-gray-100 border border-gray-200 rounded-2xl px-6 font-mono font-bold text-gray-400 text-lg" value={editingEmp.id || ''}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Full Name</label><input className="w-full h-14 border-2 border-gray-100 focus:border-[#0854a0] rounded-2xl px-6 font-bold outline-none uppercase" value={editingEmp.fullName || ''} onChange={e => setEditingEmp({...editingEmp, fullName: e.target.value})}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Father's Name</label><input className="w-full h-14 border-2 border-gray-100 focus:border-[#0854a0] rounded-2xl px-6 font-bold outline-none uppercase" value={editingEmp.fatherName || ''} onChange={e => setEditingEmp({...editingEmp, fatherName: e.target.value})}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Mother's Name</label><input className="w-full h-14 border-2 border-gray-100 focus:border-[#0854a0] rounded-2xl px-6 font-bold outline-none uppercase" value={editingEmp.motherName || ''} onChange={e => setEditingEmp({...editingEmp, motherName: e.target.value})}/></div>
+                            <div className="grid grid-cols-2 gap-6">
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Date of Birth</label><input type="date" className="w-full h-14 border-2 border-gray-100 focus:border-[#0854a0] rounded-2xl px-6 font-bold outline-none" value={editingEmp.dob || ''} onChange={e => setEditingEmp({...editingEmp, dob: e.target.value})}/></div>
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Gender</label><select className="w-full h-14 border-2 border-gray-100 focus:border-[#0854a0] rounded-2xl px-6 font-bold outline-none" value={editingEmp.gender} onChange={e => setEditingEmp({...editingEmp, gender: e.target.value})}><option>Male</option><option>Female</option><option>Other</option></select></div>
                             </div>
-                            <div className="space-y-1"><label className="text-[10px] font-black uppercase">Outstanding Advance</label><input type="number" className="w-full h-14 border-2 border-black rounded-2xl px-5 font-bold outline-none" value={editingEmp.outstandingAdvance || 0} onChange={e => setEditingEmp({...editingEmp, outstandingAdvance: Number(e.target.value)})}/></div>
-                            <div className="space-y-1"><label className="text-[10px] font-black uppercase">Fixed Monthly Bonus</label><input type="number" className="w-full h-14 border-2 border-black rounded-2xl px-5 font-bold outline-none" value={editingEmp.fixedBonus || 0} onChange={e => setEditingEmp({...editingEmp, fixedBonus: Number(e.target.value)})}/></div>
+                            <div className="grid grid-cols-3 gap-6">
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Marital Status</label><select className="w-full h-14 border-2 border-gray-100 focus:border-[#0854a0] rounded-2xl px-6 font-bold outline-none" value={editingEmp.maritalStatus} onChange={e => setEditingEmp({...editingEmp, maritalStatus: e.target.value})}><option>Single</option><option>Married</option><option>Divorced</option></select></div>
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Blood Group</label><input className="w-full h-14 border-2 border-gray-100 focus:border-[#0854a0] rounded-2xl px-6 font-bold outline-none" value={editingEmp.bloodGroup || ''} onChange={e => setEditingEmp({...editingEmp, bloodGroup: e.target.value})}/></div>
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Nationality</label><input className="w-full h-14 border-2 border-gray-100 focus:border-[#0854a0] rounded-2xl px-6 font-bold outline-none" value={editingEmp.nationality || 'Indian'} onChange={e => setEditingEmp({...editingEmp, nationality: e.target.value})}/></div>
+                            </div>
+                         </div>
+                      </div>
+                   )}
+
+                   {onboardingTab === 1 && (
+                      <div className="grid grid-cols-2 gap-12 animate-in fade-in">
+                         <div className="space-y-8">
+                            <h3 className="text-[12px] font-black uppercase text-[#0854a0] border-b pb-4">Primary Contact</h3>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Mobile Number</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.mobile || ''} onChange={e => setEditingEmp({...editingEmp, mobile: e.target.value})}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Official Email</label><input type="email" className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.officialEmail || ''} onChange={e => setEditingEmp({...editingEmp, officialEmail: e.target.value})}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Personal Email</label><input type="email" className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.personalEmail || ''} onChange={e => setEditingEmp({...editingEmp, personalEmail: e.target.value})}/></div>
+                         </div>
+                         <div className="space-y-8">
+                            <h3 className="text-[12px] font-black uppercase text-rose-600 border-b pb-4">Emergency Support</h3>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Emergency Name</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.emergencyContactName || ''} onChange={e => setEditingEmp({...editingEmp, emergencyContactName: e.target.value})}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Relation</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.emergencyContactRelation || ''} onChange={e => setEditingEmp({...editingEmp, emergencyContactRelation: e.target.value})}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Contact Number</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.emergencyContactNumber || ''} onChange={e => setEditingEmp({...editingEmp, emergencyContactNumber: e.target.value})}/></div>
+                         </div>
+                      </div>
+                   )}
+
+                   {onboardingTab === 2 && (
+                      <div className="grid grid-cols-2 gap-12 animate-in fade-in">
+                         <div className="space-y-6">
+                            <h3 className="text-[12px] font-black uppercase text-[#0854a0] border-b pb-4">Current Mailing Site</h3>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Street Address</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.currentAddress.line1} onChange={e => updateAddr('currentAddress', 'line1', e.target.value)}/></div>
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">City</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.currentAddress.city} onChange={e => updateAddr('currentAddress', 'city', e.target.value)}/></div>
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">State</label>
+                                  <select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.currentAddress.state} onChange={e => updateAddr('currentAddress', 'state', e.target.value)}>
+                                     {INDIAN_STATES.map(s => <option key={s}>{s}</option>)}
+                                  </select>
+                               </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Pincode</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.currentAddress.pincode} onChange={e => updateAddr('currentAddress', 'pincode', e.target.value)}/></div>
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Country</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.currentAddress.country} onChange={e => updateAddr('currentAddress', 'country', e.target.value)}/></div>
+                            </div>
+                         </div>
+                         <div className="space-y-6">
+                            <div className="flex justify-between items-center border-b pb-4">
+                               <h3 className="text-[12px] font-black uppercase text-gray-400">Permanent Domicile</h3>
+                               <label className="flex items-center space-x-2 cursor-pointer">
+                                  <input type="checkbox" className="w-4 h-4 accent-[#0854a0]" checked={editingEmp.permSameAsCurrent} onChange={e => setEditingEmp({...editingEmp, permSameAsCurrent: e.target.checked, permanentAddress: e.target.checked ? {...editingEmp.currentAddress} : editingEmp.permanentAddress})}/>
+                                  <span className="text-[10px] font-black uppercase text-[#0854a0]">Same as Current</span>
+                               </label>
+                            </div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Street Address</label><input disabled={editingEmp.permSameAsCurrent} className={`w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold ${editingEmp.permSameAsCurrent ? 'bg-gray-50' : ''}`} value={editingEmp.permanentAddress.line1} onChange={e => updateAddr('permanentAddress', 'line1', e.target.value)}/></div>
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">City</label><input disabled={editingEmp.permSameAsCurrent} className={`w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold ${editingEmp.permSameAsCurrent ? 'bg-gray-50' : ''}`} value={editingEmp.permanentAddress.city} onChange={e => updateAddr('permanentAddress', 'city', e.target.value)}/></div>
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">State</label>
+                                  <select disabled={editingEmp.permSameAsCurrent} className={`w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold ${editingEmp.permSameAsCurrent ? 'bg-gray-50' : ''}`} value={editingEmp.permanentAddress.state} onChange={e => updateAddr('permanentAddress', 'state', e.target.value)}>
+                                     {INDIAN_STATES.map(s => <option key={s}>{s}</option>)}
+                                  </select>
+                               </div>
+                            </div>
+                         </div>
+                      </div>
+                   )}
+
+                   {onboardingTab === 3 && (
+                      <div className="grid grid-cols-2 gap-12 animate-in fade-in">
+                         <div className="space-y-6">
+                            <h3 className="text-[12px] font-black uppercase text-emerald-600 border-b pb-4">Bank Coordinates</h3>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Account Holder Name</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.bankDetails.accountHolderName} onChange={e => updateBank('accountHolderName', e.target.value)}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Bank Name</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.bankDetails.bankName} onChange={e => updateBank('bankName', e.target.value)}/></div>
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Branch Name</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.bankDetails.branchName} onChange={e => updateBank('branchName', e.target.value)}/></div>
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">IFSC Code</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold font-mono" value={editingEmp.bankDetails.ifscCode} onChange={e => updateBank('ifscCode', e.target.value)}/></div>
+                            </div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Account Number</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold font-mono" value={editingEmp.bankDetails.accountNumber} onChange={e => updateBank('accountNumber', e.target.value)}/></div>
+                         </div>
+                         <div className="space-y-6">
+                            <h3 className="text-[12px] font-black uppercase text-gray-400 border-b pb-4">Transfer Configuration</h3>
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Account Type</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.bankDetails.accountType} onChange={e => updateBank('accountType', e.target.value)}><option>Salary</option><option>Savings</option><option>Current</option></select></div>
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Payment Mode</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.bankDetails.paymentMode} onChange={e => updateBank('paymentMode', e.target.value)}><option>Bank Transfer</option><option>Cheque</option><option>Cash</option></select></div>
+                            </div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">UPI ID (Optional)</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.bankDetails.upiId} onChange={e => updateBank('upiId', e.target.value)}/></div>
+                            <div className="mt-4 p-6 bg-gray-50 border-2 border-dashed border-gray-200 rounded-3xl flex flex-col items-center justify-center space-y-2 cursor-pointer hover:border-[#0854a0] transition-all" onClick={() => chequeInputRef.current?.click()}>
+                                <input type="file" ref={chequeInputRef} className="hidden" accept="image/*,application/pdf" onChange={(e) => handleFileUpload(e, 'cancelledChequeUrl')} />
+                                {editingEmp.bankDetails.cancelledChequeUrl ? <div className="flex items-center text-emerald-600 font-bold text-xs"><CheckCircle2 size={16} className="mr-2"/> Document Uploaded</div> : <div className="flex flex-col items-center"><Upload className="text-gray-300 mb-2" size={24}/> <span className="text-[10px] font-black uppercase text-gray-400">Upload Cancelled Cheque</span></div>}
+                            </div>
+                         </div>
+                      </div>
+                   )}
+
+                   {onboardingTab === 4 && (
+                      <div className="grid grid-cols-2 gap-12 animate-in fade-in">
+                         <div className="space-y-6">
+                            <h3 className="text-[12px] font-black uppercase text-[#0854a0] border-b pb-4">Government ID Records</h3>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Aadhaar Number</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold font-mono" value={editingEmp.aadhaar || ''} onChange={e => setEditingEmp({...editingEmp, aadhaar: e.target.value})}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">PAN Card Number</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold font-mono uppercase" value={editingEmp.pan || ''} onChange={e => setEditingEmp({...editingEmp, pan: e.target.value})}/></div>
+                         </div>
+                         <div className="space-y-6">
+                            <h3 className="text-[12px] font-black uppercase text-purple-600 border-b pb-4">Statutory Enrollment</h3>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">PF UAN Number</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold font-mono" value={editingEmp.uan || ''} onChange={e => setEditingEmp({...editingEmp, uan: e.target.value})}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">PF Account Number</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold font-mono" value={editingEmp.pfAccountNumber || ''} onChange={e => setEditingEmp({...editingEmp, pfAccountNumber: e.target.value})}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">ESI Number</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold font-mono" value={editingEmp.esiNo || ''} onChange={e => setEditingEmp({...editingEmp, esiNo: e.target.value})}/></div>
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">PT State</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.ptState} onChange={e => setEditingEmp({...editingEmp, ptState: e.target.value})}>{INDIAN_STATES.map(s => <option key={s}>{s}</option>)}</select></div>
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Tax Regime</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.taxRegime} onChange={e => setEditingEmp({...editingEmp, taxRegime: e.target.value})}><option>Old</option><option>New</option></select></div>
+                            </div>
+                         </div>
+                      </div>
+                   )}
+
+                   {onboardingTab === 5 && (
+                      <div className="grid grid-cols-2 gap-12 animate-in fade-in">
+                         <div className="space-y-6">
+                            <h3 className="text-[12px] font-black uppercase text-[#0854a0] border-b pb-4">Corporate Alignment</h3>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Date of Joining</label><input type="date" className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.dateOfJoining || ''} onChange={e => setEditingEmp({...editingEmp, dateOfJoining: e.target.value})}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Employment Type</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.employmentType} onChange={e => setEditingEmp({...editingEmp, employmentType: e.target.value})}><option>Permanent</option><option>Contract</option><option>Intern</option></select></div>
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Department</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.department || ''} onChange={e => setEditingEmp({...editingEmp, department: e.target.value})}/></div>
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Designation</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.designation || ''} onChange={e => setEditingEmp({...editingEmp, designation: e.target.value})}/></div>
+                            </div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Reporting Manager</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.reportingManager || ''} onChange={e => setEditingEmp({...editingEmp, reportingManager: e.target.value})}/></div>
+                         </div>
+                         <div className="space-y-6">
+                            <h3 className="text-[12px] font-black uppercase text-amber-600 border-b pb-4">Logistics & Shifts</h3>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Work Location (Branch)</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.branchId} onChange={e => setEditingEmp({...editingEmp, branchId: e.target.value})}>{branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></div>
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Shift Type</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.shiftType} onChange={e => setEditingEmp({...editingEmp, shiftType: e.target.value})}><option>General</option><option>Rotational</option><option>Night</option></select></div>
+                               <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Weekly Off</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.weeklyOff} onChange={e => setEditingEmp({...editingEmp, weeklyOff: e.target.value})}><option>Sunday</option><option>Monday</option><option>Saturday & Sunday</option></select></div>
+                            </div>
+                         </div>
+                      </div>
+                   )}
+
+                   {onboardingTab === 6 && (
+                      <div className="space-y-10 animate-in fade-in">
+                         <div className="grid grid-cols-4 gap-8 bg-black p-10 rounded-[40px] text-white">
+                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">Salary Type</label><select className="w-full h-12 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.salaryType} onChange={e => setEditingEmp({...editingEmp, salaryType: e.target.value})}><option>Monthly</option><option>Daily</option><option>Hourly</option></select></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">Basic Component</label><input type="number" className="w-full h-12 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.basicSalary} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, basicSalary: Number(e.target.value)}))}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">House Rent (HRA)</label><input type="number" className="w-full h-12 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.basicSalary} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, basicSalary: Number(e.target.value)}))}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">Special Allowance</label><input type="number" className="w-full h-12 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.specialAllowance} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, specialAllowance: Number(e.target.value)}))}/></div>
+                         </div>
+                         <div className="grid grid-cols-3 gap-8">
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-500">Other Allowances</label><input type="number" className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.otherAllowances} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, otherAllowances: Number(e.target.value)}))}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-500">TDS (Tax At Source)</label><input type="number" className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.tds} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, tds: Number(e.target.value)}))}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-500">PF Calculation</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.pfDeductionType} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, pfDeductionType: e.target.value}))}><option>Auto</option><option>Manual</option></select></div>
+                         </div>
+                         <div className="flex justify-around bg-gray-50 p-10 rounded-[40px] border border-gray-100 shadow-inner">
+                            <div className="text-center"><p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Gross Computed</p><p className="text-3xl font-black text-gray-800">₹ {(editingEmp.grossSalary || 0).toLocaleString()}</p></div>
+                            <div className="text-center"><p className="text-[10px] font-black text-[#0854a0] uppercase tracking-[0.2em] mb-1">Net Monthly Takehome</p><p className="text-3xl font-black text-[#0854a0]">₹ {(editingEmp.netSalary || 0).toLocaleString()}</p></div>
+                         </div>
+                      </div>
+                   )}
+
+                   {onboardingTab === 7 && (
+                      <div className="grid grid-cols-2 gap-12 animate-in fade-in">
+                         <div className="space-y-8">
+                            <h3 className="text-[12px] font-black uppercase text-[#0854a0] border-b pb-4">Compliance Mapping</h3>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Tracking Method</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.attendanceMethod} onChange={e => setEditingEmp({...editingEmp, attendanceMethod: e.target.value})}><option>Manual</option><option>Biometric</option><option>App</option></select></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Leave Policy</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.leavePolicy} onChange={e => setEditingEmp({...editingEmp, leavePolicy: e.target.value})}><option>Standard</option><option>Contractual</option><option>Probation</option></select></div>
+                         </div>
+                         <div className="space-y-8">
+                            <h3 className="text-[12px] font-black uppercase text-emerald-600 border-b pb-4">Entitlements</h3>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Opening Leave Balance</label><input type="number" className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.openingLeaveBalance} onChange={e => setEditingEmp({...editingEmp, openingLeaveBalance: Number(e.target.value)})}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Overtime Eligibility</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.overtimeEligibility} onChange={e => setEditingEmp({...editingEmp, overtimeEligibility: e.target.value})}><option>Yes</option><option>No</option></select></div>
+                         </div>
+                      </div>
+                   )}
+
+                   {onboardingTab === 8 && (
+                      <div className="grid grid-cols-2 gap-12 animate-in fade-in">
+                         <div className="space-y-8">
+                            <h3 className="text-[12px] font-black uppercase text-[#0854a0] border-b pb-4">Lifecycle Status</h3>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Employee Status</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.status} onChange={e => setEditingEmp({...editingEmp, status: e.target.value})}><option>Active</option><option>Inactive</option><option>Resigned</option><option>Terminated</option></select></div>
+                            {['Resigned', 'Terminated'].includes(editingEmp.status) && <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Last Working Day</label><input type="date" className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.lastWorkingDay || ''} onChange={e => setEditingEmp({...editingEmp, lastWorkingDay: e.target.value})}/></div>}
+                         </div>
+                         <div className="space-y-8">
+                            <h3 className="text-[12px] font-black uppercase text-purple-600 border-b pb-4">System Credentials</h3>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Create Login Access</label><select className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.loginCreation} onChange={e => setEditingEmp({...editingEmp, loginCreation: e.target.value})}><option>Yes</option><option>No</option></select></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-600">Portal Security Passcode</label><input className="w-full h-14 border-2 border-gray-100 rounded-2xl px-6 font-bold" value={editingEmp.portalPassword} onChange={e => setEditingEmp({...editingEmp, portalPassword: e.target.value})}/></div>
                          </div>
                       </div>
                    )}
                 </div>
-                <div className="p-8 border-t border-black bg-gray-50 flex justify-between items-center">
+
+                <div className="p-10 border-t border-gray-100 bg-[#fcfcfc] flex justify-between items-center shadow-[0_-12px_48px_rgba(0,0,0,0.05)]">
                    <div className="flex space-x-4">
-                      <button disabled={onboardingTab === 0} onClick={() => setOnboardingTab(t => t - 1)} className="px-6 py-4 bg-white border border-black rounded-2xl text-[11px] font-black uppercase text-black disabled:opacity-30 flex items-center transition-all hover:bg-gray-100"><ChevronLeft size={16} className="mr-2"/> Previous Unit</button>
-                      <button disabled={onboardingTab === 8} onClick={() => setOnboardingTab(t => t + 1)} className="px-8 py-4 bg-black text-white rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center transition-all hover:bg-gray-800">Proceed <ChevronRight size={16} className="ml-2"/></button>
+                      <button disabled={onboardingTab === 0} onClick={() => setOnboardingTab(t => t - 1)} className="px-10 py-5 bg-white border border-gray-200 rounded-[20px] text-[11px] font-black uppercase text-gray-400 disabled:opacity-30 flex items-center transition-all hover:bg-gray-50"><ChevronLeft size={16} className="mr-3"/> Previous</button>
+                      <button disabled={onboardingTab === 8} onClick={() => setOnboardingTab(t => t + 1)} className="px-12 py-5 bg-[#0854a0] text-white rounded-[20px] text-[11px] font-black uppercase tracking-widest flex items-center transition-all shadow-xl shadow-blue-100 hover:bg-blue-700">Next Unit <ChevronRight size={16} className="ml-3"/></button>
                    </div>
-                   <button onClick={handleSave} className="px-12 py-4 bg-black text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-2xl flex items-center hover:bg-gray-800 active:scale-95 transition-all"><Check size={18} className="mr-2"/> Persist Master Data</button>
+                   <button onClick={handleSave} className="px-20 py-5 bg-black text-white rounded-[20px] text-[11px] font-black uppercase tracking-widest shadow-2xl flex items-center hover:bg-gray-800 transition-all active:scale-95"><Check size={18} className="mr-3"/> Commit Master Record</button>
                 </div>
              </div>
           </div>
