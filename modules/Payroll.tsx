@@ -18,7 +18,7 @@ import {
   PayrollSettings, Address
 } from '../types';
 import { db, storage } from '../firebase';
-import { collection, onSnapshot, setDoc, doc, writeBatch, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, setDoc, doc, writeBatch, deleteDoc, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { generateSecureQR, COMPANY_NAME, LOGO_DARK_BG, INDIAN_STATES } from '../constants';
 import QRCode from 'react-qr-code';
@@ -144,12 +144,24 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
       const storageRef = ref(storage, `employee_docs/${editingEmp.id}/${field}_${Date.now()}`);
       await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(storageRef);
-      setEditingEmp({ ...editingEmp, [field]: downloadURL });
-    } catch (error) {
+      
+      setEditingEmp((prev: any) => {
+          if (!prev) return prev;
+          if (field === 'photoUrl') {
+              return { ...prev, photoUrl: downloadURL };
+          } else {
+              return { 
+                  ...prev, 
+                  bankDetails: { ...prev.bankDetails, cancelledChequeUrl: downloadURL } 
+              };
+          }
+      });
+    } catch (error: any) {
       console.error("Upload error:", error);
-      alert("Failed to upload document.");
+      alert("Failed to upload document: " + (error.message || "Unknown error"));
     } finally {
       setIsUploading(false);
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -198,6 +210,16 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
           id: attId, employeeId: empId, month: procMonth, days: {}, overtimeHours: hours, isLocked: false
       };
       await setDoc(doc(db, 'attendance', attId), newAtt);
+  };
+
+  const handleRateChange = async (empId: string, rate: number) => {
+      const emp = employees.find(e => e.id === empId);
+      if (!emp) return;
+      try {
+          await updateDoc(doc(db, 'employees', empId), { overtimeRatePerHour: rate });
+      } catch (e: any) {
+          console.error("Rate update failed", e);
+      }
   };
 
   const runPayrollEngine = async (isOvertimeOnly: boolean = false) => {
@@ -275,6 +297,129 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
         headCount: employees.filter(e => e.status === 'Active').length
     };
   }, [payrollItems, procMonth, employees]);
+
+  /** SAP / PWC STYLE PRINTING TEMPLATE */
+  const BW_PayslipDocument = ({ item }: { item: PayrollItem }) => {
+    const employee = employees.find(e => e.id === item.employeeId);
+    const branch = branches.find(b => b.id === employee?.branchId) || branches[0];
+    const monthYear = new Date(item.runId.split('-')[1] + "-01");
+    const monthStr = monthYear.toLocaleString('default', { month: 'long' }).toUpperCase();
+
+    return (
+      <div className="bg-white w-[210mm] min-h-[297mm] p-12 text-black font-sans flex flex-col border border-black relative print:border-none print:p-8">
+        <div className="flex justify-between items-start border-b-2 border-black pb-4 mb-4">
+          <img src={LOGO_DARK_BG} alt="Logo" className="h-20 grayscale brightness-0 object-contain" />
+          <div className="text-right flex-1 ml-10">
+            <h1 className="text-xl font-bold uppercase tracking-tight leading-tight">{COMPANY_NAME.toUpperCase()}</h1>
+            <p className="text-sm font-bold uppercase tracking-widest">Service Delivery Center</p>
+            <p className="text-[10px] font-medium uppercase opacity-60">(Private Limited)</p>
+          </div>
+        </div>
+        
+        <div className="text-center mb-6">
+           <h2 className="text-lg font-bold text-black border-b-2 border-black inline-block px-8 pb-1 uppercase tracking-widest">
+             Payslip for the month of {monthStr} {monthYear.getFullYear()}
+           </h2>
+        </div>
+
+        <div className="grid grid-cols-2 gap-x-0 border-2 border-black mb-6">
+           <div className="border-r border-black">
+              {[
+                { l: 'Employee ID', v: item.employeeId },
+                { l: 'Date of Birth', v: employee?.dob },
+                { l: 'Designation', v: employee?.designation?.toUpperCase() },
+                { l: 'UAN Number', v: employee?.uan || 'N/A' },
+                { l: 'PF Number', v: employee?.pfAccountNumber || 'N/A' },
+                { l: 'Regime Type', v: employee?.taxRegime + ' Regime' }
+              ].map((row, i) => (
+                <div key={i} className={`flex px-4 py-1.5 text-[11px] ${i < 5 ? 'border-b border-black' : ''}`}>
+                   <span className="w-[140px] font-bold">{row.l}</span><span>: {row.v}</span>
+                </div>
+              ))}
+           </div>
+           <div>
+              {[
+                { l: 'Employee Name', v: item.employeeName?.toUpperCase() },
+                { l: 'Joining Date', v: employee?.dateOfJoining },
+                { l: 'Location', v: branch.address.city?.toUpperCase() },
+                { l: 'PAN Number', v: employee?.pan?.toUpperCase() || 'N/A' },
+                { l: 'LOS', v: item.lopDays + ' Days' },
+                { l: 'Tax ID', v: branch.gstin }
+              ].map((row, i) => (
+                <div key={i} className={`flex px-4 py-1.5 text-[11px] ${i < 5 ? 'border-b border-black' : ''}`}>
+                   <span className="w-[140px] font-bold">{row.l}</span><span>: {row.v}</span>
+                </div>
+              ))}
+           </div>
+        </div>
+
+        <div className="flex border-2 border-black flex-1 max-h-[400px]">
+           <div className="w-1/2 border-r border-black flex flex-col">
+              <div className="bg-gray-100 p-2.5 font-bold border-b border-black text-[12px] flex justify-between uppercase">
+                <span>EARNINGS</span>
+                <span>Amount (Rs.)</span>
+              </div>
+              <div className="flex-1 p-4 space-y-2 text-[11px]">
+                 <div className="flex justify-between"><span>Basic Salary</span><span className="font-bold">{item.earnings.basic.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
+                 <div className="flex justify-between"><span>House Rent Allowance</span><span className="font-bold">{item.earnings.hra.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
+                 <div className="flex justify-between"><span>Special Pay</span><span className="font-bold">{item.earnings.special.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
+                 {item.earnings.overtime > 0 && <div className="flex justify-between"><span>Overtime Pay</span><span className="font-bold">{item.earnings.overtime.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>}
+                 {item.earnings.bonus > 0 && <div className="flex justify-between"><span>Fixed Bonus</span><span className="font-bold">{item.earnings.bonus.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>}
+              </div>
+              <div className="bg-gray-100 p-2.5 font-bold border-t border-black text-[12px] flex justify-between uppercase">
+                <span>Total Earnings Rs.</span>
+                <span>{item.grossEarnings.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+              </div>
+           </div>
+           <div className="w-1/2 flex flex-col">
+              <div className="bg-gray-100 p-2.5 font-bold border-b border-black text-[12px] flex justify-between uppercase">
+                <span>DEDUCTIONS</span>
+                <span>Amount (Rs.)</span>
+              </div>
+              <div className="flex-1 p-4 space-y-2 text-[11px]">
+                 <div className="flex justify-between"><span>Provident Fund</span><span className="font-bold">{item.deductions.pf.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
+                 <div className="flex justify-between"><span>Professional Tax</span><span className="font-bold">{item.deductions.pt.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>
+                 {item.deductions.esi > 0 && <div className="flex justify-between"><span>ESI Contribution</span><span className="font-bold">{item.deductions.esi.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>}
+                 {item.deductions.tds > 0 && <div className="flex justify-between"><span>Income Tax (TDS)</span><span className="font-bold">{item.deductions.tds.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span></div>}
+              </div>
+              <div className="bg-gray-100 p-2.5 font-bold border-t border-black text-[12px] flex justify-between uppercase">
+                <span>Total Deductions Rs.</span>
+                <span>{item.totalDeductions.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
+              </div>
+           </div>
+        </div>
+
+        <div className="border-x-2 border-b-2 border-black p-5 flex items-center justify-between bg-gray-50">
+           <div className="flex items-center space-x-8">
+              <div className="p-1.5 border border-black bg-white">
+                <QRCode value={item.qrCode} size={90} />
+              </div>
+              <div>
+                <p className="text-[14px] font-black uppercase tracking-tight">Net Salary Payable Rs. {item.netSalary.toLocaleString('en-IN', {minimumFractionDigits: 2})}</p>
+                <p className="text-[10px] font-bold italic mt-1.5 opacity-70">{numberToWords(item.netSalary)}</p>
+              </div>
+           </div>
+           <div className="text-right space-y-1">
+              <div className="flex justify-between w-56 text-[10px]"><span className="font-bold">STANDARD DAYS</span><span>: {item.standardDays}</span></div>
+              <div className="flex justify-between w-56 text-[10px]"><span className="font-bold">DAYS WORKED</span><span>: {item.payableDays}</span></div>
+              <div className="flex justify-between w-56 text-[10px]"><span className="font-bold">PAYMENT MODE</span><span>: {employee?.bankDetails.paymentMode?.toUpperCase()}</span></div>
+              <div className="flex justify-between w-56 text-[10px]"><span className="font-bold">BANK A/C NO</span><span className="font-mono">: {employee?.bankDetails.accountNumber}</span></div>
+           </div>
+        </div>
+
+        <div className="mt-8 border-2 border-black p-5 space-y-3 bg-gray-50/50">
+           <p className="text-[10px] font-bold uppercase">Note: This is a system generated report. This does not require any signature.</p>
+           <p className="text-[9px] leading-relaxed opacity-70">
+             Private and Confidential Disclaimer: This payslip has been generated by the {COMPANY_NAME} SDC payroll engine. All compensation information has been treated as strictly confidential and is for individual recipient use only.
+           </p>
+        </div>
+        <div className="mt-auto flex justify-between text-[9px] font-bold uppercase opacity-40 pt-4">
+           <span>Doc Ref: PR-SDC-V1</span>
+           <span>Vedartha Systems & Solutions</span>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col h-full bg-[#f8f9fa] font-sans">
@@ -400,7 +545,7 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
               <div className="bg-white rounded-[40px] border border-black/10 overflow-hidden shadow-sm">
                  <table className="w-full text-left text-[11px]">
                     <thead className="bg-gray-50 border-b font-black uppercase text-gray-500">
-                       <tr><th className="px-8 py-5">Personnel</th><th className="px-8 py-5">Rate/Hr (₹)</th><th className="px-8 py-5">OT Hours (Month)</th><th className="px-8 py-5 text-right">Computed OT Pay</th></tr>
+                       <tr><th className="px-8 py-5">Personnel</th><th className="px-8 py-5">Money Per Hour (₹)</th><th className="px-8 py-5">OT Hours (Month)</th><th className="px-8 py-5 text-right">Computed OT Pay</th></tr>
                     </thead>
                     <tbody className="divide-y">
                        {employees.map(emp => {
@@ -409,8 +554,25 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
                           return (
                              <tr key={emp.id} className="hover:bg-gray-50">
                                 <td className="px-8 py-5 font-black uppercase">{emp.fullName}</td>
-                                <td className="px-8 py-5 font-bold">₹ {emp.overtimeRatePerHour || 0}</td>
-                                <td className="px-8 py-5"><input type="number" className="w-24 h-12 bg-gray-50 border rounded-xl px-4 font-black text-blue-600 outline-none focus:border-[#0854a0]" value={hours} onChange={(e) => handleOTChange(emp.id, Number(e.target.value))}/></td>
+                                <td className="px-8 py-5">
+                                    <div className="flex items-center space-x-2">
+                                        <span className="text-gray-400 font-bold">₹</span>
+                                        <input 
+                                            type="number" 
+                                            className="w-24 h-12 bg-gray-50 border rounded-xl px-4 font-black text-[#0854a0] outline-none focus:border-[#0854a0]" 
+                                            value={emp.overtimeRatePerHour || 0} 
+                                            onChange={(e) => handleRateChange(emp.id, Number(e.target.value))}
+                                        />
+                                    </div>
+                                </td>
+                                <td className="px-8 py-5">
+                                    <input 
+                                        type="number" 
+                                        className="w-24 h-12 bg-gray-50 border rounded-xl px-4 font-black text-blue-600 outline-none focus:border-[#0854a0]" 
+                                        value={hours} 
+                                        onChange={(e) => handleOTChange(emp.id, Number(e.target.value))}
+                                    />
+                                </td>
                                 <td className="px-8 py-5 text-right font-black text-rose-600">₹ {(hours * (emp.overtimeRatePerHour || 0)).toLocaleString()}</td>
                              </tr>
                           );
@@ -455,7 +617,12 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
                              <td className="px-8 py-5 font-mono font-black text-blue-600">{item.id}</td>
                              <td className="px-8 py-5 font-black uppercase">{item.employeeName}</td>
                              <td className="px-8 py-5 font-black text-emerald-600">₹ {item.netSalary.toLocaleString()}</td>
-                             <td className="px-8 py-5 text-right"><div className="flex justify-end space-x-2"><button onClick={() => { setPrintingItem(item); setPrintingType('PAYSLIP'); setIsPrinting(true); setTimeout(() => { window.print(); setIsPrinting(false); }, 500); }} className="p-3 bg-gray-50 rounded-xl hover:bg-black hover:text-white transition-all"><Printer size={16}/></button><button onClick={async () => { if(confirm('Purge this record?')) await deleteDoc(doc(db, 'payroll_items', item.id)); }} className="p-3 bg-gray-50 text-rose-500 rounded-xl hover:bg-rose-500 hover:text-white transition-all"><UserMinus size={16}/></button></div></td>
+                             <td className="px-8 py-5 text-right">
+                               <div className="flex justify-end space-x-2">
+                                 <button onClick={() => { setPrintingItem(item); setPrintingType('PAYSLIP'); setIsPrinting(true); setTimeout(() => { window.print(); setIsPrinting(false); setPrintingItem(null); }, 600); }} className="p-3 bg-gray-50 rounded-xl hover:bg-black hover:text-white transition-all"><Printer size={16}/></button>
+                                 <button onClick={async () => { if(confirm('Purge this record?')) await deleteDoc(doc(db, 'payroll_items', item.id)); }} className="p-3 bg-gray-50 text-rose-500 rounded-xl hover:bg-rose-500 hover:text-white transition-all"><UserMinus size={16}/></button>
+                               </div>
+                             </td>
                           </tr>
                        ))}
                     </tbody>
@@ -486,10 +653,10 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
         )}
       </div>
 
-      {/* Re-use/Maintain existing showEmpModal Logic from previous turn for full coverage */}
+      {isPrinting && printingItem && createPortal(<BW_PayslipDocument item={printingItem} />, document.getElementById('print-portal')!)}
+
       {showEmpModal && editingEmp && (
           <div className="fixed inset-0 bg-black/95 z-[110] flex items-center justify-center p-6 backdrop-blur-md">
-             {/* [Existing Modal Content Reproduced for Completeness] */}
              <div className="bg-white w-full max-w-7xl rounded-[48px] shadow-2xl flex flex-col max-h-[95vh] overflow-hidden border border-black/10">
                 <div className="p-10 border-b border-gray-100 flex justify-between items-center bg-[#fcfcfc]">
                    <div><h2 className="text-3xl font-black uppercase tracking-tighter">Personnel Master Data</h2><p className="text-[11px] font-bold text-[#0854a0] uppercase tracking-[0.3em] mt-1">Unified Enterprise Resource Record: {editingEmp.id}</p></div>
@@ -505,12 +672,18 @@ const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
                 </div>
                 <div className="flex-1 overflow-y-auto p-12 custom-scrollbar bg-white">
                    {onboardingTab === 0 && (
-                      <div className="grid grid-cols-4 gap-x-10 gap-y-8 animate-in fade-in">
+                      <div className="grid grid-cols-4 gap-x-10 gap-y-8 animate-in fade-in duration-300">
                          <div className="col-span-1 flex flex-col items-center">
-                             <div className="w-48 h-48 rounded-[40px] border-4 border-gray-50 overflow-hidden flex items-center justify-center relative bg-gray-50 shadow-inner group cursor-pointer hover:border-blue-100 transition-all">
+                             <div 
+                                onClick={() => fileInputRef.current?.click()}
+                                className="w-48 h-48 rounded-[40px] border-4 border-gray-50 overflow-hidden flex items-center justify-center relative bg-gray-50 shadow-inner group cursor-pointer hover:border-blue-100 transition-all"
+                             >
                                  {isUploading && <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10"><Loader2 className="animate-spin text-[#0854a0]" /></div>}
                                  {editingEmp.photoUrl ? <img src={editingEmp.photoUrl} className="w-full h-full object-cover" /> : <Camera size={48} className="text-gray-200" />}
                                  <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => handleFileUpload(e, 'photoUrl')} />
+                                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                    <Upload className="text-white" size={24} />
+                                 </div>
                              </div>
                              <button onClick={() => fileInputRef.current?.click()} className="mt-4 text-[10px] font-black uppercase text-[#0854a0] tracking-widest hover:underline">Upload Photograph</button>
                          </div>
