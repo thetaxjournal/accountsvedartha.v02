@@ -34,10 +34,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                const empData = empSnapshot.docs[0].data();
                const syntheticUser = {
                    uid: empData.id,
-                   email: empData.email || `${empData.id}@vedartha.internal`,
+                   email: empData.officialEmail || `${empData.id}@vedartha.internal`,
                    displayName: empData.fullName,
                    role: UserRole.EMPLOYEE,
-                   clientId: empData.id, // Reusing field for mapping
                    isEmployee: true
                };
                onLogin(syntheticUser);
@@ -69,7 +68,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
            throw new Error('Invalid Login ID or Password.');
         }
 
-        // STRATEGY 2: Check Custom Staff Users
+        // STRATEGY 2: Check Custom Staff Users (Admins, Accountants, etc.)
         const usersRef = collection(db, 'users');
         const userQ = query(usersRef, where('email', '==', email), where('password', '==', password));
         const userSnapshot = await getDocs(userQ);
@@ -102,16 +101,17 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen w-full flex items-center justify-center bg-[#f4f7fa] relative overflow-hidden font-sans">
-      <div className="absolute top-0 left-0 w-full h-1 bg-[#0854a0]"></div>
-      <div className="absolute top-0 right-0 w-1/2 h-screen bg-blue-50/50 -skew-x-12 transform translate-x-1/3 z-0"></div>
+      <div className="absolute top-0 left-0 w-full h-1 bg-black"></div>
+      <div className="absolute top-0 right-0 w-1/2 h-screen bg-gray-100 -skew-x-12 transform translate-x-1/3 z-0"></div>
       
       <div className="w-full max-w-[480px] z-10 p-4">
-        <div className="bg-white rounded-[32px] shadow-[0_32px_128px_-16px_rgba(0,0,0,0.08)] border border-gray-100 overflow-hidden transition-all duration-500">
+        <div className="bg-white rounded-[32px] shadow-[0_32px_128px_-16px_rgba(0,0,0,0.08)] border border-black/5 overflow-hidden transition-all duration-500">
           <div className="p-10 pb-6 text-center">
             <div className="flex justify-center mb-8">
-              <img src={COMPANY_LOGO} alt="VEDARTHA" className="h-16 object-contain" />
+              <img src={COMPANY_LOGO} alt="VEDARTHA" className="h-16 object-contain grayscale" />
             </div>
             <h2 className="text-xl font-black text-gray-800 tracking-tight uppercase mb-1">Vedartha International Limited</h2>
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Enterprise Access Terminal</p>
           </div>
 
           <form onSubmit={handleSubmit} className="p-10 pt-4 space-y-6">
@@ -124,18 +124,18 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <div className="space-y-2">
               <div className="relative">
                 <User className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full h-14 bg-gray-50 border-2 border-transparent focus:border-[#0854a0] rounded-2xl pl-14 pr-6 text-sm font-bold outline-none" placeholder="Employee ID (e.g. 911001)" required />
+                <input type="text" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full h-14 bg-gray-50 border-2 border-transparent focus:border-black rounded-2xl pl-14 pr-6 text-sm font-bold outline-none uppercase" placeholder="Personnel ID / Login ID" required />
               </div>
             </div>
 
             <div className="space-y-2">
               <div className="relative">
                 <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full h-14 bg-gray-50 border-2 border-transparent focus:border-[#0854a0] rounded-2xl pl-14 pr-6 text-sm font-bold outline-none" placeholder="Password" required />
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full h-14 bg-gray-50 border-2 border-transparent focus:border-black rounded-2xl pl-14 pr-6 text-sm font-bold outline-none" placeholder="Security Passcode" required />
               </div>
             </div>
 
-            <button type="submit" disabled={loading} className="w-full h-16 bg-[#0854a0] text-white rounded-2xl text-sm font-black uppercase tracking-widest shadow-2xl hover:bg-[#064280] transition-all flex items-center justify-center group disabled:opacity-70">
+            <button type="submit" disabled={loading} className="w-full h-16 bg-black text-white rounded-2xl text-sm font-black uppercase tracking-widest shadow-2xl hover:bg-gray-900 transition-all flex items-center justify-center group disabled:opacity-70">
               {loading ? <Loader2 size={24} className="animate-spin" /> : <>Secure Access <ArrowRight size={18} className="ml-3 group-hover:translate-x-1" /></>}
             </button>
           </form>

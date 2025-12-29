@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
-import { Module, Branch, Client, Invoice, Payment, UserProfile, AppNotification, UserRole } from './types';
-import { INITIAL_BRANCHES, INITIAL_CLIENTS } from './constants';
+import { Module, Branch, Client, Invoice, Payment, UserProfile, AppNotification, UserRole, Employee, PayrollItem } from './types';
+import { INITIAL_BRANCHES } from './constants';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './modules/Dashboard';
@@ -16,23 +17,15 @@ import Notifications from './modules/Notifications';
 import Payroll from './modules/Payroll';
 import Login from './components/Login';
 import ClientPortal from './modules/ClientPortal';
+import EmployeePortal from './modules/EmployeePortal';
 
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { 
   collection, 
   onSnapshot, 
-  addDoc, 
   doc, 
-  updateDoc, 
   setDoc,
-  query,
-  where,
-  orderBy,
-  getDoc,
-  deleteDoc,
-  getDocs,
-  writeBatch
 } from 'firebase/firestore';
 
 const App: React.FC = () => {
@@ -48,6 +41,8 @@ const App: React.FC = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [payrollItems, setPayrollItems] = useState<PayrollItem[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   
   const [showCreation, setShowCreation] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
@@ -56,6 +51,7 @@ const App: React.FC = () => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
+        // Default mock profile for Firebase Auth users (Admin)
         const mockProfile: UserProfile = {
             uid: currentUser.uid,
             email: currentUser.email || '',
@@ -90,32 +86,23 @@ const App: React.FC = () => {
     });
 
     const unsubInvoices = onSnapshot(collection(db, 'invoices'), (snapshot) => {
-      const sorted = snapshot.docs.map(doc => doc.data() as Invoice).sort((a,b) => {
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
-        if (dateB !== dateA) return dateB - dateA;
-        return b.id.localeCompare(a.id);
-      });
-      setInvoices(sorted);
+      setInvoices(snapshot.docs.map(doc => doc.data() as Invoice));
     });
 
     const unsubPayments = onSnapshot(collection(db, 'payments'), (snapshot) => {
-      const sorted = snapshot.docs.map(doc => doc.data() as Payment).sort((a,b) => {
-        const dateA = new Date(a.date).getTime();
-        const dateB = new Date(b.date).getTime();
-        if (dateB !== dateA) return dateB - dateA;
-        return b.id.localeCompare(a.id);
-      });
-      setPayments(sorted);
+      setPayments(snapshot.docs.map(doc => doc.data() as Payment));
     });
     
     const unsubNotifications = onSnapshot(collection(db, 'notifications'), (snapshot) => {
-        const sorted = snapshot.docs.map(doc => ({...doc.data(), id: doc.id} as AppNotification)).sort((a,b) => {
-            const dateA = new Date(a.date).getTime();
-            const dateB = new Date(b.date).getTime();
-            return dateB - dateA; 
-        });
-        setNotifications(sorted);
+        setNotifications(snapshot.docs.map(doc => ({...doc.data(), id: doc.id} as AppNotification)));
+    });
+
+    const unsubPayroll = onSnapshot(collection(db, 'payroll_items'), (snapshot) => {
+        setPayrollItems(snapshot.docs.map(doc => doc.data() as PayrollItem));
+    });
+
+    const unsubEmployees = onSnapshot(collection(db, 'employees'), (snapshot) => {
+        setEmployees(snapshot.docs.map(doc => doc.data() as Employee));
     });
 
     return () => {
@@ -124,6 +111,8 @@ const App: React.FC = () => {
       unsubInvoices();
       unsubPayments();
       unsubNotifications();
+      unsubPayroll();
+      unsubEmployees();
     };
   }, [user]);
 
@@ -133,6 +122,11 @@ const App: React.FC = () => {
         setUserProfile({
             uid: userObj.uid, email: userObj.email, displayName: userObj.displayName,
             role: UserRole.CLIENT, allowedBranchIds: [], clientId: userObj.clientId
+        });
+    } else if (userObj.isEmployee) {
+        setUserProfile({
+            uid: userObj.uid, email: userObj.email, displayName: userObj.displayName,
+            role: UserRole.EMPLOYEE, allowedBranchIds: []
         });
     } else if (userObj.isStaff) {
         setUserProfile({
@@ -156,6 +150,19 @@ const App: React.FC = () => {
 
   if (!user) return <Login onLogin={handleLogin} />;
 
+  // SEPARATE EMPLOYEE PORTAL
+  if (user.isEmployee) {
+    return (
+      <EmployeePortal 
+        user={user}
+        branches={branches}
+        payrollItems={payrollItems}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // SEPARATE CLIENT PORTAL
   if (user.isClient) {
     const currentClient = clients.find(c => c.id === user.clientId);
     return (
