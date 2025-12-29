@@ -1,13 +1,14 @@
+
+// Fix: Added missing 'Download' import from lucide-react.
 import React, { useState, useEffect } from 'react';
 import { 
-  Users, Calendar, CreditCard, FileText, 
+  Users, Calendar, FileText, 
   ShieldCheck, Landmark, Plus, Search, 
-  Download, Trash2, Edit2, 
+  Edit2, 
   BarChart3, Calculator,
-  X, User, Phone, MapPin, Briefcase, 
-  ShieldAlert, Save, Banknote,
-  ClipboardCheck, Power,
-  ChevronLeft, Camera, RefreshCw, Settings as SettingsIcon, ChevronRight
+  X, Camera, RefreshCw, Settings as SettingsIcon, ChevronRight,
+  ChevronLeft, Save, Banknote,
+  Download
 } from 'lucide-react';
 import { 
   Employee, AttendanceRecord, 
@@ -44,7 +45,12 @@ const numberToWords = (num: number): string => {
   return 'Rupees ' + str.trim() + ' only';
 };
 
-const Payroll: React.FC<{ branches: Branch[], userRole: UserRole }> = ({ branches = [] }) => {
+interface PayrollProps {
+  branches: Branch[];
+  userRole: UserRole;
+}
+
+const Payroll: React.FC<PayrollProps> = ({ branches = [], userRole }) => {
   const [activeSubMenu, setActiveSubMenu] = useState<'Dashboard' | 'Employees' | 'Attendance' | 'Processing' | 'Payslips' | 'Settings'>('Dashboard');
   const [onboardingTab, setOnboardingTab] = useState(0);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -362,75 +368,75 @@ const Payroll: React.FC<{ branches: Branch[], userRole: UserRole }> = ({ branche
                              <div className="w-32 h-32 rounded-[32px] bg-gray-100 border-4 border-white shadow-xl overflow-hidden flex items-center justify-center">
                                  {editingEmp.photoUrl ? <img src={editingEmp.photoUrl} className="w-full h-full object-cover" /> : <Camera size={32} className="text-gray-300" />}
                              </div>
-                             <input className="ml-6 flex-1 h-12 bg-gray-50 border rounded-2xl px-5 text-xs font-bold" placeholder="Passport Size Photo URL" value={editingEmp.photoUrl} onChange={e => setEditingEmp({...editingEmp, photoUrl: e.target.value})}/>
+                             <input className="ml-6 flex-1 h-12 bg-gray-50 border rounded-2xl px-5 text-xs font-bold" placeholder="Passport Size Photo URL" value={editingEmp.photoUrl || ''} onChange={e => setEditingEmp({...editingEmp, photoUrl: e.target.value})}/>
                          </div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-400">Employee ID</label><input disabled className="w-full h-12 bg-gray-100 border rounded-2xl px-5 font-mono font-bold" value={editingEmp.id}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Full Name</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none focus:border-blue-500" value={editingEmp.fullName} onChange={e => setEditingEmp({...editingEmp, fullName: e.target.value})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Father's Name</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.fatherName} onChange={e => setEditingEmp({...editingEmp, fatherName: e.target.value})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Mother's Name</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.motherName} onChange={e => setEditingEmp({...editingEmp, motherName: e.target.value})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">DOB</label><input type="date" className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.dob} onChange={e => setEditingEmp({...editingEmp, dob: e.target.value})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Gender</label><select className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.gender} onChange={e => setEditingEmp({...editingEmp, gender: e.target.value})}><option>Male</option><option>Female</option></select></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Marital Status</label><select className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.maritalStatus} onChange={e => setEditingEmp({...editingEmp, maritalStatus: e.target.value})}><option>Single</option><option>Married</option></select></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase text-gray-400">Employee ID</label><input disabled className="w-full h-12 bg-gray-100 border rounded-2xl px-5 font-mono font-bold" value={editingEmp.id || ''}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Full Name</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none focus:border-blue-500" value={editingEmp.fullName || ''} onChange={e => setEditingEmp({...editingEmp, fullName: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Father's Name</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.fatherName || ''} onChange={e => setEditingEmp({...editingEmp, fatherName: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Mother's Name</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.motherName || ''} onChange={e => setEditingEmp({...editingEmp, motherName: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">DOB</label><input type="date" className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.dob || ''} onChange={e => setEditingEmp({...editingEmp, dob: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Gender</label><select className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.gender || 'Male'} onChange={e => setEditingEmp({...editingEmp, gender: e.target.value})}><option>Male</option><option>Female</option></select></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Marital Status</label><select className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.maritalStatus || 'Single'} onChange={e => setEditingEmp({...editingEmp, maritalStatus: e.target.value})}><option>Single</option><option>Married</option></select></div>
                       </div>
                    )}
                    {onboardingTab === 1 && (
                       <div className="grid grid-cols-3 gap-8">
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Mobile Number</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.mobile} onChange={e => setEditingEmp({...editingEmp, mobile: e.target.value})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Official Email</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.officialEmail} onChange={e => setEditingEmp({...editingEmp, officialEmail: e.target.value})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Emergency Contact</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.emergencyContactNumber} onChange={e => setEditingEmp({...editingEmp, emergencyContactNumber: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Mobile Number</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.mobile || ''} onChange={e => setEditingEmp({...editingEmp, mobile: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Official Email</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.officialEmail || ''} onChange={e => setEditingEmp({...editingEmp, officialEmail: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Emergency Contact</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.emergencyContactNumber || ''} onChange={e => setEditingEmp({...editingEmp, emergencyContactNumber: e.target.value})}/></div>
                       </div>
                    )}
                    {onboardingTab === 2 && (
                       <div className="grid grid-cols-2 gap-8">
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Current Address</label><textarea className="w-full border-2 rounded-2xl px-5 py-3 font-bold outline-none" value={editingEmp.currentAddress.line1} onChange={e => setEditingEmp({...editingEmp, currentAddress: {...editingEmp.currentAddress, line1: e.target.value}})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Permanent Address</label><textarea className="w-full border-2 rounded-2xl px-5 py-3 font-bold outline-none" value={editingEmp.permanentAddress.line1} onChange={e => setEditingEmp({...editingEmp, permanentAddress: {...editingEmp.permanentAddress, line1: e.target.value}})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Current Address</label><textarea className="w-full border-2 rounded-2xl px-5 py-3 font-bold outline-none" value={editingEmp.currentAddress?.line1 || ''} onChange={e => setEditingEmp({...editingEmp, currentAddress: {...editingEmp.currentAddress, line1: e.target.value}})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Permanent Address</label><textarea className="w-full border-2 rounded-2xl px-5 py-3 font-bold outline-none" value={editingEmp.permanentAddress?.line1 || ''} onChange={e => setEditingEmp({...editingEmp, permanentAddress: {...editingEmp.permanentAddress, line1: e.target.value}})}/></div>
                       </div>
                    )}
                    {onboardingTab === 3 && (
                       <div className="grid grid-cols-3 gap-8">
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Bank Name</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.bankDetails.bankName} onChange={e => setEditingEmp({...editingEmp, bankDetails: {...editingEmp.bankDetails, bankName: e.target.value}})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Account Number</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.bankDetails.accountNumber} onChange={e => setEditingEmp({...editingEmp, bankDetails: {...editingEmp.bankDetails, accountNumber: e.target.value}})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">IFSC Code</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.bankDetails.ifscCode} onChange={e => setEditingEmp({...editingEmp, bankDetails: {...editingEmp.bankDetails, ifscCode: e.target.value}})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Bank Name</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.bankDetails?.bankName || ''} onChange={e => setEditingEmp({...editingEmp, bankDetails: {...editingEmp.bankDetails, bankName: e.target.value}})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Account Number</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.bankDetails?.accountNumber || ''} onChange={e => setEditingEmp({...editingEmp, bankDetails: {...editingEmp.bankDetails, accountNumber: e.target.value}})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">IFSC Code</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.bankDetails?.ifscCode || ''} onChange={e => setEditingEmp({...editingEmp, bankDetails: {...editingEmp.bankDetails, ifscCode: e.target.value}})}/></div>
                       </div>
                    )}
                    {onboardingTab === 4 && (
                       <div className="grid grid-cols-3 gap-8">
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Aadhaar Number</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.aadhaar} onChange={e => setEditingEmp({...editingEmp, aadhaar: e.target.value})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">PAN Number</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none uppercase" value={editingEmp.pan} onChange={e => setEditingEmp({...editingEmp, pan: e.target.value})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">UAN Number</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.uan} onChange={e => setEditingEmp({...editingEmp, uan: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Aadhaar Number</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.aadhaar || ''} onChange={e => setEditingEmp({...editingEmp, aadhaar: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">PAN Number</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none uppercase" value={editingEmp.pan || ''} onChange={e => setEditingEmp({...editingEmp, pan: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">UAN Number</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.uan || ''} onChange={e => setEditingEmp({...editingEmp, uan: e.target.value})}/></div>
                       </div>
                    )}
                    {onboardingTab === 5 && (
                       <div className="grid grid-cols-3 gap-8">
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Joining Date</label><input type="date" className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.dateOfJoining} onChange={e => setEditingEmp({...editingEmp, dateOfJoining: e.target.value})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Department</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.department} onChange={e => setEditingEmp({...editingEmp, department: e.target.value})}/></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Designation</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.designation} onChange={e => setEditingEmp({...editingEmp, designation: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Joining Date</label><input type="date" className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.dateOfJoining || ''} onChange={e => setEditingEmp({...editingEmp, dateOfJoining: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Department</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.department || ''} onChange={e => setEditingEmp({...editingEmp, department: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Designation</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.designation || ''} onChange={e => setEditingEmp({...editingEmp, designation: e.target.value})}/></div>
                       </div>
                    )}
                    {onboardingTab === 6 && (
                       <div className="space-y-10">
                          <div className="grid grid-cols-4 gap-8 bg-gray-900 p-8 rounded-[32px] text-white">
-                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">Basic Salary</label><input type="number" className="w-full h-11 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.basicSalary} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, basicSalary: Number(e.target.value)}))}/></div>
-                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">HRA</label><input type="number" className="w-full h-11 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.hra} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, hra: Number(e.target.value)}))}/></div>
-                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">Other Allowance</label><input type="number" className="w-full h-11 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.otherAllowances} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, otherAllowances: Number(e.target.value)}))}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">Basic Salary</label><input type="number" className="w-full h-11 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.basicSalary || 0} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, basicSalary: Number(e.target.value)}))}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">HRA</label><input type="number" className="w-full h-11 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.hra || 0} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, hra: Number(e.target.value)}))}/></div>
+                            <div className="space-y-1"><label className="text-[10px] font-black opacity-60 uppercase">Other Allowance</label><input type="number" className="w-full h-11 bg-white/10 border border-white/20 rounded-xl px-4 font-black" value={editingEmp.otherAllowances || 0} onChange={e => setEditingEmp(calculateSalaryFields({...editingEmp, otherAllowances: Number(e.target.value)}))}/></div>
                          </div>
                          <div className="flex justify-around bg-gray-50 p-8 rounded-[32px] border">
-                            <div className="text-center"><p className="text-[10px] font-black text-gray-400 uppercase">Gross Salary</p><p className="text-2xl font-black">₹ {editingEmp.grossSalary}</p></div>
-                            <div className="text-center"><p className="text-[10px] font-black text-[#0854a0] uppercase">Net Takehome</p><p className="text-2xl font-black text-[#0854a0]">₹ {editingEmp.netSalary}</p></div>
+                            <div className="text-center"><p className="text-[10px] font-black text-gray-400 uppercase">Gross Salary</p><p className="text-2xl font-black">₹ {(editingEmp.grossSalary || 0).toLocaleString()}</p></div>
+                            <div className="text-center"><p className="text-[10px] font-black text-[#0854a0] uppercase">Net Takehome</p><p className="text-2xl font-black text-[#0854a0]">₹ {(editingEmp.netSalary || 0).toLocaleString()}</p></div>
                          </div>
                       </div>
                    )}
                    {onboardingTab === 7 && (
                       <div className="grid grid-cols-2 gap-8">
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Attendance Method</label><select className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.attendanceMethod} onChange={e => setEditingEmp({...editingEmp, attendanceMethod: e.target.value as any})}><option>Biometric</option><option>App</option><option>Manual</option></select></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Overtime Eligibility</label><select className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.overtimeEligibility} onChange={e => setEditingEmp({...editingEmp, overtimeEligibility: e.target.value as any})}><option>Yes</option><option>No</option></select></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Attendance Method</label><select className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.attendanceMethod || 'Manual'} onChange={e => setEditingEmp({...editingEmp, attendanceMethod: e.target.value as any})}><option>Biometric</option><option>App</option><option>Manual</option></select></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Overtime Eligibility</label><select className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.overtimeEligibility || 'Yes'} onChange={e => setEditingEmp({...editingEmp, overtimeEligibility: e.target.value as any})}><option>Yes</option><option>No</option></select></div>
                       </div>
                    )}
                    {onboardingTab === 8 && (
                       <div className="grid grid-cols-3 gap-8">
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Role / Access</label><select className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.role} onChange={e => setEditingEmp({...editingEmp, role: e.target.value as any})}><option value={UserRole.EMPLOYEE}>Employee</option><option value={UserRole.HR}>HR Lead</option><option value={UserRole.ADMIN}>Super Admin</option></select></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Emp Status</label><select className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.status} onChange={e => setEditingEmp({...editingEmp, status: e.target.value as any})}><option>Active</option><option>Inactive</option><option>Resigned</option></select></div>
-                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Portal Passcode</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.portalPassword} onChange={e => setEditingEmp({...editingEmp, portalPassword: e.target.value})}/></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Role / Access</label><select className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.role || UserRole.EMPLOYEE} onChange={e => setEditingEmp({...editingEmp, role: e.target.value as any})}><option value={UserRole.EMPLOYEE}>Employee</option><option value={UserRole.HR}>HR Lead</option><option value={UserRole.ADMIN}>Super Admin</option></select></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Emp Status</label><select className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.status || 'Active'} onChange={e => setEditingEmp({...editingEmp, status: e.target.value as any})}><option>Active</option><option>Inactive</option><option>Resigned</option></select></div>
+                         <div className="space-y-1"><label className="text-[10px] font-black uppercase">Portal Passcode</label><input className="w-full h-12 border-2 rounded-2xl px-5 font-bold outline-none" value={editingEmp.portalPassword || ''} onChange={e => setEditingEmp({...editingEmp, portalPassword: e.target.value})}/></div>
                       </div>
                    )}
                 </div>

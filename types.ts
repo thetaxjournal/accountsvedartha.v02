@@ -51,6 +51,8 @@ export interface Branch {
   invoicePrefix: string;
   nextInvoiceNumber: number;
   bankDetails: BankDetails;
+  portalUsername?: string;
+  portalPassword?: string;
 }
 
 export interface Client {
